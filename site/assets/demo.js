@@ -87,51 +87,65 @@ for (const b of $('#method').children) b.addEventListener('click', async () => {
   await load();
 });
 
-// ---------------------------------------------------------------- evidence log: BLAKE2b-256 check on the server
-// logView: the records on screen (a copy, so "Change one record" can edit one). The server recomputes every hash;
-// the page then shows the result row by row.
-const PACE = 140;  // ms per row on screen, so the eye can follow; the server time is shown at the end
+// ---------------------------------------------------------------- evidence log: BLAKE2b-256, computed in this browser
+// logView: every record on screen, oldest first (a copy, so "Change one record" can edit one). Verify recomputes each
+// record's hash here, one at a time, and checks its link to the record before; the server then checks the same records.
+const PACE = 45;  // ms between records on screen, so the eye can follow; the real time of each hash is in the Time column
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-function renderLog(status = {}) {
-  if (!R) return;
-  const recs = logView ?? R.log.tail;
-  $('#log-sub').textContent = R.log.records ? `${R.log.records} records after ${R.n} handshakes, ${method} method. The table shows the last 10.` : 'Run the live replay to fill the log.';
-  $('#log').innerHTML = recs.slice().reverse().map(r => {
-    let j = {};
-    try { j = JSON.parse(r.payload); } catch { /* an edited record may not be JSON */ }
-    const kind = { notice: 'Notice', alert: 'Alert', clear: 'Clear' }[j.type] ?? '?', st = status[r.seq];
-    const cell = !st ? '<span class="muted">—</span>' : st === 'run' ? '<span class="muted">Checking…</span>'
-      : st.ok ? '<span class="pill clear">✓ Hash matches</span>' : `<span class="pill alert">✗ Does not match</span> <span class="mono muted">${st.computed.slice(0, 10)}…</span>`;
-    return `<tr data-seq="${r.seq}" class="${r.edited ? 'edited' : ''}"><td class="num-c mono muted">${r.seq}</td>
-      <td><span class="pill ${j.type === 'notice' ? 'none' : j.type ?? 'none'}">${kind}</span><span class="mono"> ${esc(j.client ?? '')}${j.site ? ' · ' + esc(j.site) : ''} · ${j.score !== undefined ? sgn(j.score) : ''}</span>${r.edited ? ' <b style="color:var(--alert)">edited</b>' : ''}</td>
-      <td class="mono muted">${r.prev.slice(0, 14)}…</td><td class="mono">${r.hash.slice(0, 14)}…</td><td data-testid="check">${cell}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">No records yet.</td></tr>';
+const ZERO = '0'.repeat(64);
+function logRow(r, st) {
+  let j = {};
+  try { j = JSON.parse(r.payload); } catch { /* an edited record may not be JSON */ }
+  const kind = { notice: 'Notice', alert: 'Alert', clear: 'Clear' }[j.type] ?? '?';
+  const check = !st ? '<span class="faint">—</span>' : st.run ? '<span class="muted">Computing…</span>'
+    : st.ok ? '<span class="pill clear">✓ Matches</span>' : `<span class="pill alert">✗ ${st.why}</span>`;
+  return `<tr data-seq="${r.seq}" class="${r.edited ? 'edited' : ''}"><td class="num-c mono muted">${r.seq}</td>
+    <td><span class="pill ${j.type === 'notice' ? 'none' : j.type ?? 'none'}">${kind}</span><span class="mono"> ${esc(j.client ?? '')}${j.site ? ' · ' + esc(j.site) : ''}${j.score !== undefined ? ' · ' + sgn(j.score) : ''}</span>${r.edited ? ' <b style="color:var(--alert)">edited</b>' : ''}</td>
+    <td class="mono">${r.hash.slice(0, 16)}…</td>
+    <td class="mono ${st && !st.run && !st.ok ? 'forged' : ''}">${st?.computed ? st.computed.slice(0, 16) + '…' : ''}</td>
+    <td class="num-c mono muted">${st?.us !== undefined ? st.us.toFixed(0) + ' µs' : ''}</td><td data-testid="check">${check}</td></tr>`;
 }
+function renderLog() {
+  if (!R) return;
+  const recs = logView ?? R.log.all;
+  $('#log-sub').textContent = recs.length ? `${recs.length} records after ${R.n} handshakes, ${method} method.` : 'Run the live replay to fill the log.';
+  $('#log').innerHTML = recs.map(r => logRow(r, null)).join('') || '<tr><td colspan="6" class="muted">No records yet.</td></tr>';
+}
+let blake;
 async function verify(edit) {
-  if (!R?.log.tail.length) { $('#verify-result').textContent = 'Run the live replay first.'; return; }
+  if (!R?.log.all.length) { $('#verify-result').textContent = 'Run the live replay first.'; return; }
   for (const b of [$('#verify'), $('#tamper')]) b.disabled = true;
-  logView = R.log.tail.map(r => ({ ...r }));
-  if (edit) {  // an attacker hides an alert: rewrite one record, keep its old hash
-    const r = logView[Math.floor(logView.length / 2)];
-    r.payload = r.payload.replace(/"type":"\w+"/, '"type":"clear"').replace(/"score":-?[\d.]+/, '"score":-5');
-    r.edited = true;
-  }
-  const status = {};
-  renderLog(status);
-  $('#verify-result').innerHTML = '<span class="muted">The server computes the BLAKE2b-256 hash of each record…</span>';
   try {
+    blake ??= (await import('./blake2b.js')).default;
+    logView = R.log.all.map(r => ({ ...r }));
+    if (edit) {  // an attacker hides an alert: rewrite one record, keep its old hash
+      const r = logView.find(x => x.payload.includes('"alert"')) ?? logView[Math.floor(logView.length / 2)];
+      r.payload = r.payload.replace(/"type":"\w+"/, '"type":"clear"').replace(/"score":-?[\d.]+/, '"score":-5');
+      r.edited = true;
+    }
+    renderLog();
+    const rows = [...$('#log').children], out = $('#verify-result');
+    let last = logView[0].seq === 1 ? ZERO : logView[0].prev, bad = 0, total = 0;
+    for (const [i, r] of logView.entries()) {
+      rows[i].outerHTML = logRow(r, { run: true });
+      const row = $('#log').children[i];
+      row.scrollIntoView({ block: 'nearest' });
+      out.innerHTML = `<span class="muted">Computing BLAKE2b-256 of record ${r.seq} of ${logView.length}…</span>`;
+      await sleep(PACE);
+      const t0 = performance.now(), computed = blake.blake2bHex(`${r.prev}\t${r.seq}\t${r.payload}`, null, 32), us = (performance.now() - t0) * 1000;
+      total += us;
+      const linked = r.prev === last, ok = linked && computed === r.hash;
+      row.outerHTML = logRow(r, { computed, us, ok, why: linked ? 'Hash does not match' : 'Link broken' });
+      if (!ok && !bad) bad = r.seq;
+      last = r.hash;
+      rows[i] = $('#log').children[i];
+    }
     const v = await api('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ records: logView.map(({ seq, prev, payload, hash }) => ({ seq, prev, payload, hash })) }) });
-    for (const row of v.rows) {  // oldest first, as the chain is checked
-      status[row.seq] = 'run';
-      renderLog(status);
-      await sleep(PACE);
-      status[row.seq] = row;
-      renderLog(status);
-    }
-    const ms = v.rows.reduce((a, r) => a + r.us, 0) / 1000;
-    $('#verify-result').innerHTML = v.ok ? `<span class="pill clear">Log is correct: ${v.records} records, ${v.algorithm}, ${ms.toFixed(2)} ms on the server</span>`
-      : `<span class="pill alert">Record ${v.bad_record} is incorrect: its hash does not match</span>`;
+    const agree = v.bad_record === bad ? 'The server agrees.' : `The server found record ${v.bad_record}.`;
+    out.innerHTML = bad ? `<span class="pill alert">Record ${bad} is incorrect: its hash does not match. ${agree}</span>`
+      : `<span class="pill clear">Log is correct: ${logView.length} records, BLAKE2b-256, ${(total / 1000).toFixed(2)} ms. ${agree}</span>`;
+    if (bad) $(`#log tr[data-seq="${bad}"]`).scrollIntoView({ block: 'center' });
   } catch (e) { $('#verify-result').textContent = e.message; }
   finally { for (const b of [$('#verify'), $('#tamper')]) b.disabled = false; }
 }

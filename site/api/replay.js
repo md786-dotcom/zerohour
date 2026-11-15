@@ -56,5 +56,5 @@ export default function handler(req, res) {
         flush: method === 'plan' ? 'every record' : 'alerts only', server_mean_us: mean(lat) };
     })(),
     compare: Object.fromEntries(Object.entries(runs).map(([k, v]) => [k, { caught: v.caught, false_alerts: v.false_alerts }])),
-    log: { records: run.chain.records.length, algorithm: 'BLAKE2b-256', tail: run.chain.records.slice(-10) } });
+    log: { records: run.chain.records.length, algorithm: 'BLAKE2b-256', all: run.chain.records } });
 }

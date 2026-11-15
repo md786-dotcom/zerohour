@@ -65,18 +65,22 @@ test('wireshark: the forged issuer shows in the attack capture only', async ({ p
 test('evidence log: the server finds a changed record', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('run').click();
-  await expect(page.getByTestId('progress')).toHaveText(/^([2-9]\d|1[0-2]\d) of 128/, { timeout: 40_000 });
+  await expect(page.getByTestId('progress')).toHaveText(/^([4-9]\d|1[0-2]\d) of 128/, { timeout: 40_000 });
   await page.getByTestId('stop').click();
   await page.getByRole('tab', { name: 'Evidence log' }).click();
+  const rows = await page.locator('#log tr[data-seq]').count();
+  expect(rows).toBeGreaterThan(10);  // every record, not only the last 10
   await page.getByTestId('verify').click();
-  await expect(page.getByTestId('verify-result')).toContainText('computes the BLAKE2b-256 hash');  // the check runs record by record
-  await expect(page.getByTestId('verify-result')).toContainText('Log is correct', { timeout: 15_000 });
-  await expect(page.getByTestId('check').filter({ hasText: 'Hash matches' })).toHaveCount(10);
+  await expect(page.getByTestId('verify-result')).toContainText('Computing BLAKE2b-256 of record');  // computed live, record by record
+  await expect(page.getByTestId('verify-result')).toContainText('Log is correct', { timeout: 30_000 });
+  await expect(page.getByTestId('verify-result')).toContainText('The server agrees');
+  await expect(page.getByTestId('check').filter({ hasText: '✓ Matches' })).toHaveCount(rows);
   await fitsOneScreen(page, 'log');
   await page.getByTestId('tamper').click();
-  await expect(page.getByTestId('verify-result')).toContainText('is incorrect', { timeout: 15_000 });
-  await expect(page.locator('tr.edited [data-testid=check]')).toContainText('Does not match');
-  await expect(page.getByTestId('check').filter({ hasText: 'Does not match' })).toHaveCount(1);
+  await expect(page.getByTestId('verify-result')).toContainText('is incorrect', { timeout: 30_000 });
+  await expect(page.getByTestId('verify-result')).toContainText('The server agrees');
+  await expect(page.locator('tr.edited [data-testid=check]')).toContainText('Hash does not match');
+  await expect(page.getByTestId('check').filter({ hasText: '✗' })).toHaveCount(1);
   await fitsOneScreen(page, 'log-tampered');
 });
 
