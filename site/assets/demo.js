@@ -91,6 +91,7 @@ for (const b of $('#method').children) b.addEventListener('click', async () => {
 // logView: every record on screen, oldest first (a copy, so "Change one record" can edit one). Verify recomputes each
 // record's hash here, one at a time, and checks its link to the record before; the server then checks the same records.
 const PACE = 45;  // ms between records on screen, so the eye can follow; the real time of each hash is in the Time column
+const TIMES = 200;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const ZERO = '0'.repeat(64);
 function logRow(r, st) {
@@ -103,7 +104,7 @@ function logRow(r, st) {
     <td><span class="pill ${j.type === 'notice' ? 'none' : j.type ?? 'none'}">${kind}</span><span class="mono"> ${esc(j.client ?? '')}${j.site ? ' · ' + esc(j.site) : ''}${j.score !== undefined ? ' · ' + sgn(j.score) : ''}</span>${r.edited ? ' <b style="color:var(--alert)">edited</b>' : ''}</td>
     <td class="mono">${r.hash.slice(0, 16)}…</td>
     <td class="mono ${st && !st.run && !st.ok ? 'forged' : ''}">${st?.computed ? st.computed.slice(0, 16) + '…' : ''}</td>
-    <td class="num-c mono muted">${st?.us !== undefined ? st.us.toFixed(0) + ' µs' : ''}</td><td data-testid="check">${check}</td></tr>`;
+    <td class="num-c mono muted">${st?.us !== undefined ? st.us.toFixed(1) + ' µs' : ''}</td><td data-testid="check">${check}</td></tr>`;
 }
 function renderLog() {
   if (!R) return;
@@ -132,7 +133,11 @@ async function verify(edit) {
       row.scrollIntoView({ block: 'nearest' });
       out.innerHTML = `<span class="muted">Computing BLAKE2b-256 of record ${r.seq} of ${logView.length}…</span>`;
       await sleep(PACE);
-      const t0 = performance.now(), computed = blake.blake2bHex(`${r.prev}\t${r.seq}\t${r.payload}`, null, 32), us = (performance.now() - t0) * 1000;
+      // Browsers round timers to about 0.1 ms, so one hash is timed as the mean of TIMES runs.
+      const input = `${r.prev}\t${r.seq}\t${r.payload}`, t0 = performance.now();
+      let computed;
+      for (let k = 0; k < TIMES; k++) computed = blake.blake2bHex(input, null, 32);
+      const us = ((performance.now() - t0) * 1000) / TIMES;
       total += us;
       const linked = r.prev === last, ok = linked && computed === r.hash;
       row.outerHTML = logRow(r, { computed, us, ok, why: linked ? 'Hash does not match' : 'Link broken' });
@@ -144,7 +149,7 @@ async function verify(edit) {
       body: JSON.stringify({ records: logView.map(({ seq, prev, payload, hash }) => ({ seq, prev, payload, hash })) }) });
     const agree = v.bad_record === bad ? 'The server agrees.' : `The server found record ${v.bad_record}.`;
     out.innerHTML = bad ? `<span class="pill alert">Record ${bad} is incorrect: its hash does not match. ${agree}</span>`
-      : `<span class="pill clear">Log is correct: ${logView.length} records, BLAKE2b-256, ${(total / 1000).toFixed(2)} ms. ${agree}</span>`;
+      : `<span class="pill clear">Log is correct: ${logView.length} records, BLAKE2b-256, ${(total / 1000).toFixed(2)} ms of hashing. ${agree}</span>`;
     if (bad) $(`#log tr[data-seq="${bad}"]`).scrollIntoView({ block: 'center' });
   } catch (e) { $('#verify-result').textContent = e.message; }
   finally { for (const b of [$('#verify'), $('#tamper')]) b.disabled = false; }
