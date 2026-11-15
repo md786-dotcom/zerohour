@@ -69,11 +69,14 @@ live replay reads `lab/pcaps/busy.pcap` (real lab handshakes, 8 clients, 2 inter
 simulation is `site/lib/sim.js` and the tuning sweep `site/lib/tune.js`.
 Regenerate fixtures with `sh site/scripts/fixtures.sh`; deploy with `cd site && vercel deploy --prod`.
 
-**Live capture** (`/#capture`, `site/api/capture.js`): the user types 3 to 8 public hosts or IPv4 addresses. A Vercel Sandbox VM
-starts from a snapshot (tcpdump, mitmproxy, this sensor built on Linux) and runs `site/lib/capture.sh`. A client in its own
-network namespace visits each host two times, and tcpdump records the client's side of the link. The second visit goes
-direct or through `mitmdump --mode transparent` on the client's gateway. `zerohour show` parses both PCAPs and the
-engine decides (baseline from the first visit). Both PCAPs can be downloaded. Private, loopback and link-local addresses are refused.
+**Live capture** (`/live`, `site/api/live.js`, `site/lib/live.js`): real handshakes to sites the user types, tuned method only.
+Step 1 (Learn) starts a Vercel Sandbox VM from a snapshot (tcpdump, mitmproxy, this sensor built on Linux). The VM is the
+client's network: a client in its own network namespace visits each site one time, tcpdump records the client's side of the
+link, and `zerohour show` parses each handshake (`site/lib/capture.sh`). Each site keeps one IPv4 address for the whole session.
+Step 2 (Test) visits the same sites again in the same VM. The user ticks which sites go through `mitmdump --mode transparent`
+on the client's gateway: one site is one change, several sites are many changes. The page streams each handshake, the score
+and the verdict as they happen; the VM keeps a hash-chained evidence log of every test, which the page verifies (BLAKE2b-256).
+Both PCAPs can be downloaded. 3 to 8 public hosts or IPv4 addresses; private, loopback and link-local addresses are refused.
 Rebuild the snapshot after a sensor change: `cd site && node --env-file=../.env.local scripts/snapshot.mjs <pushed commit>`.
 
 ## Tests
@@ -83,7 +86,7 @@ Rebuild the snapshot after a sensor change: `cd site && node --env-file=../.env.
 sh tests/calibrate_e2e.sh                        # E2E: calibrate on the lab PCAPs -> e2e/artifacts/calibrate.txt
 sh tests/wireshark_check.sh                      # tshark vs sensor: JA4, SNI, TTL, issuer vs verdict -> e2e/artifacts/wireshark.txt
 node site/test/parity.mjs                        # web engine == C++ sensor on every lab event
-(cd e2e && npx playwright test -c site.config.ts) # E2E of the deployed site -> e2e/artifacts/site-*.png
+(cd e2e && npx playwright test -c site.config.ts) # E2E of the deployed site, incl. /live on real traffic -> e2e/artifacts/
 cd e2e && npm install && npx playwright test     # E2E: plan gates G1/G2 + the 5 demo steps in the dashboard
 npx playwright show-report artifacts/report      # artifact: HTML report with trace + video per test
 ```

@@ -35,17 +35,17 @@ export function hoverTip(el) {
 }
 
 // Score walk: series [{name, color, dash, pts: [[site, score, result]]}] against the alert/clear thresholds.
-export function walkChart(svg, series, { upper, lower }) {
+export function walkChart(svg, series, { upper, lower, xlabel = 'sites counted in the test', xmax: xmin = 6 }) {
   const W = svg.clientWidth || 640, H = svg.clientHeight || 280, L = 40, R = 76, T = 14, B = 34;
   const all = series.flatMap(s => s.pts);
-  const xmax = Math.max(6, ...all.map(p => p[0]));
+  const xmax = Math.max(xmin, ...all.map(p => p[0]));
   const ymax = Math.max(upper, ...all.map(p => p[1])) + 1, ymin = Math.min(lower, ...all.map(p => p[1])) - 1;
   const x = v => L + (v / xmax) * (W - L - R), y = v => T + ((ymax - v) / (ymax - ymin)) * (H - T - B);
   let s = '';
   for (let v = Math.ceil(ymin / 2) * 2; v <= ymax; v += 2)
     s += `<line class="grid-l" x1="${L}" x2="${x(xmax)}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
   for (let i = 1; i <= xmax; i++) s += `<text x="${x(i)}" y="${H - 14}" text-anchor="middle">${i}</text>`;
-  s += `<text x="${(L + x(xmax)) / 2}" y="${H - 1}" text-anchor="middle">sites counted in the test</text>`;
+  s += `<text x="${(L + x(xmax)) / 2}" y="${H - 1}" text-anchor="middle">${esc(xlabel)}</text>`;
   for (const [v, label, col] of [[upper, 'alert', 'var(--alert)'], [lower, 'clear', 'var(--clear)']])
     s += `<line class="thr" stroke="${col}" x1="${L}" x2="${x(xmax)}" y1="${y(v)}" y2="${y(v)}"/><text x="${x(xmax) + 6}" y="${y(v) + 4}">${sgn(v)} ${label}</text>`;
   for (const { name, color, dash, pts } of series) {

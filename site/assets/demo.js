@@ -1,14 +1,15 @@
 import { $, esc, sgn, api, chips, hoverTip, walkChart } from './ui.js';
+import { evidenceLog } from './log.js';
 
 // ---------------------------------------------------------------- tabs (one screen each, no page scroll)
-const TABS = ['live', 'capture', 'lab', 'wireshark', 'log'];
+const TABS = ['live', 'lab', 'wireshark', 'log'];
 function show(tab) {
   if (!TABS.includes(tab)) tab = 'live';
   for (const b of $('#tabs').children) b.setAttribute('aria-selected', b.dataset.tab === tab);
   for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== tab;
   if (tab === 'lab' && !labDone) lab('attack');
   if (tab === 'wireshark' && !wsDone) capture('attack');
-  if (tab === 'log') renderLog();
+  if (tab === 'log') log.render();
   history.replaceState(null, '', '#' + tab);
 }
 for (const b of $('#tabs').children) b.addEventListener('click', () => show(b.dataset.tab));
@@ -16,7 +17,7 @@ const press = (group, attr, v) => { for (const b of $(group).children) if (b.dat
 
 // ---------------------------------------------------------------- live replay of busy.pcap
 const TOTAL = 128, STEP = 4, TICK = 200;
-let n = 0, method = 'tuned', running = false, timer = 0, R = null, prevTop = '', gen = 0, logView = null;
+let n = 0, method = 'tuned', running = false, timer = 0, R = null, prevTop = '', gen = 0;
 
 // Shows the state after `k` handshakes. A response that arrives after Stop, Reset or a newer request is dropped.
 async function load(k = n) {
@@ -24,7 +25,7 @@ async function load(k = n) {
   if (g !== gen) return false;
   n = k;
   R = r;
-  logView = null;
+  log.reset();
   render();
   return true;
 }
@@ -87,75 +88,9 @@ for (const b of $('#method').children) b.addEventListener('click', async () => {
   await load();
 });
 
-// ---------------------------------------------------------------- evidence log: BLAKE2b-256, computed in this browser
-// logView: every record on screen, oldest first (a copy, so "Change one record" can edit one). Verify recomputes each
-// record's hash here, one at a time, and checks its link to the record before; the server then checks the same records.
-const PACE = 45;  // ms between records on screen, so the eye can follow; the real time of each hash is in the Time column
-const TIMES = 200;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const ZERO = '0'.repeat(64);
-function logRow(r, st) {
-  let j = {};
-  try { j = JSON.parse(r.payload); } catch { /* an edited record may not be JSON */ }
-  const kind = { notice: 'Notice', alert: 'Alert', clear: 'Clear' }[j.type] ?? '?';
-  const check = !st ? '<span class="faint">—</span>' : st.run ? '<span class="muted">Computing…</span>'
-    : st.ok ? '<span class="pill clear">✓ Matches</span>' : `<span class="pill alert">✗ ${st.why}</span>`;
-  return `<tr data-seq="${r.seq}" class="${r.edited ? 'edited' : ''}"><td class="num-c mono muted">${r.seq}</td>
-    <td><span class="pill ${j.type === 'notice' ? 'none' : j.type ?? 'none'}">${kind}</span><span class="mono"> ${esc(j.client ?? '')}${j.site ? ' · ' + esc(j.site) : ''}${j.score !== undefined ? ' · ' + sgn(j.score) : ''}</span>${r.edited ? ' <b style="color:var(--alert)">edited</b>' : ''}</td>
-    <td class="mono">${r.hash.slice(0, 16)}…</td>
-    <td class="mono ${st && !st.run && !st.ok ? 'forged' : ''}">${st?.computed ? st.computed.slice(0, 16) + '…' : ''}</td>
-    <td class="num-c mono muted">${st?.us !== undefined ? st.us.toFixed(1) + ' µs' : ''}</td><td data-testid="check">${check}</td></tr>`;
-}
-function renderLog() {
-  if (!R) return;
-  const recs = logView ?? R.log.all;
-  $('#log-sub').textContent = recs.length ? `${recs.length} records after ${R.n} handshakes, ${method} method.` : 'Run the live replay to fill the log.';
-  $('#log').innerHTML = recs.map(r => logRow(r, null)).join('') || '<tr><td colspan="6" class="muted">No records yet.</td></tr>';
-}
-let blake;
-async function verify(edit) {
-  if (!R?.log.all.length) { $('#verify-result').textContent = 'Run the live replay first.'; return; }
-  for (const b of [$('#verify'), $('#tamper')]) b.disabled = true;
-  try {
-    blake ??= (await import('./blake2b.js')).default;
-    logView = R.log.all.map(r => ({ ...r }));
-    if (edit) {  // an attacker hides an alert: rewrite one record, keep its old hash
-      const r = logView.find(x => x.payload.includes('"alert"')) ?? logView[Math.floor(logView.length / 2)];
-      r.payload = r.payload.replace(/"type":"\w+"/, '"type":"clear"').replace(/"score":-?[\d.]+/, '"score":-5');
-      r.edited = true;
-    }
-    renderLog();
-    const rows = [...$('#log').children], out = $('#verify-result');
-    let last = logView[0].seq === 1 ? ZERO : logView[0].prev, bad = 0, total = 0;
-    for (const [i, r] of logView.entries()) {
-      rows[i].outerHTML = logRow(r, { run: true });
-      const row = $('#log').children[i];
-      row.scrollIntoView({ block: 'nearest' });
-      out.innerHTML = `<span class="muted">Computing BLAKE2b-256 of record ${r.seq} of ${logView.length}…</span>`;
-      await sleep(PACE);
-      // Browsers round timers to about 0.1 ms, so one hash is timed as the mean of TIMES runs.
-      const input = `${r.prev}\t${r.seq}\t${r.payload}`, t0 = performance.now();
-      let computed;
-      for (let k = 0; k < TIMES; k++) computed = blake.blake2bHex(input, null, 32);
-      const us = ((performance.now() - t0) * 1000) / TIMES;
-      total += us;
-      const linked = r.prev === last, ok = linked && computed === r.hash;
-      row.outerHTML = logRow(r, { computed, us, ok, why: linked ? 'Hash does not match' : 'Link broken' });
-      if (!ok && !bad) bad = r.seq;
-      last = r.hash;
-      rows[i] = $('#log').children[i];
-    }
-    const v = await api('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ records: logView.map(({ seq, prev, payload, hash }) => ({ seq, prev, payload, hash })) }) });
-    const agree = v.bad_record === bad ? 'The server agrees.' : `The server found record ${v.bad_record}.`;
-    out.innerHTML = bad ? `<span class="pill alert">Record ${bad} is incorrect: its hash does not match. ${agree}</span>`
-      : `<span class="pill clear">Log is correct: ${logView.length} records, BLAKE2b-256, ${(total / 1000).toFixed(2)} ms of hashing. ${agree}</span>`;
-    if (bad) $(`#log tr[data-seq="${bad}"]`).scrollIntoView({ block: 'center' });
-  } catch (e) { $('#verify-result').textContent = e.message; }
-  finally { for (const b of [$('#verify'), $('#tamper')]) b.disabled = false; }
-}
-$('#verify').addEventListener('click', () => verify(false));
-$('#tamper').addEventListener('click', () => verify(true));
+// ---------------------------------------------------------------- evidence log (assets/log.js): BLAKE2b-256, computed in this browser
+const log = evidenceLog({ records: () => R?.log.all ?? [], empty: 'Run the live replay first.',
+  sub: k => (k ? `${k} records after ${R.n} handshakes, ${method} method.` : 'Run the live replay to fill the log.') });
 
 // ---------------------------------------------------------------- lab scenarios
 let labDone = false;
@@ -174,7 +109,6 @@ const walk = ev => {
   }
   return pts;
 };
-const cell = x => `<span class="mono">${sgn(x.delta)}</span> <span class="mono muted">→ ${sgn(x.score)}</span>${x.decision !== 'pending' ? ` <span class="pill ${x.decision}">${x.decision === 'alert' ? 'Alert' : 'Clear'}</span>` : ''}`;
 const first = r => (r.decisions[0] ? `${r.decisions[0].decision === 'alert' ? 'Alert' : 'Clear'} after ${r.decisions[0].sites} sites` : 'No decision');
 async function lab(s) {
   labDone = true;
@@ -185,53 +119,12 @@ async function lab(s) {
   $('#lab-verdict').textContent = `Plan: ${first(plan)} · Tuned: ${first(tuned)}`;
   walkChart($('#lab-chart'), [{ name: 'Plan method', color: 'var(--plan)', dash: '6 5', pts: walk(plan.events) },
     { name: 'Tuned method', color: 'var(--tuned)', pts: walk(tuned.events) }], tuned.params);
+  const cell = x => `<span class="mono">${sgn(x.delta)}</span> <span class="mono muted">→ ${sgn(x.score)}</span>${x.decision !== 'pending' ? ` <span class="pill ${x.decision}">${x.decision === 'alert' ? 'Alert' : 'Clear'}</span>` : ''}`;
   $('#lab-rows').innerHTML = tuned.events.map((e, i) => `<tr><td>${esc(e.site)}</td>
     <td>${chips({ A: e.checks.a, B: e.checks.b_seen ? e.checks.b : null, D: e.checks.d })}</td><td class="num-c">${cell(plan.events[i])}</td><td class="num-c">${cell(e)}</td></tr>`).join('');
 }
 for (const b of $('#scenarios').children) b.addEventListener('click', () => lab(b.dataset.s));
 hoverTip($('#lab-chart'));
-
-// ---------------------------------------------------------------- live capture of the user's sites (/api/capture)
-let capPath = 'direct';
-for (const b of $('#cap-path').children) b.addEventListener('click', () => {
-  capPath = b.dataset.path;
-  press('#cap-path', 'path', capPath);
-  $('#cap-sub').textContent = capPath === 'mitm' ? 'The second visit goes through mitmproxy on the client’s gateway.' : 'The second visit uses the direct path.';
-});
-const pcapUrl = b64 => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'application/vnd.tcpdump.pcap' }));
-const verdict = (r, name) => r.decisions[0] ? `${name}: ${r.decisions[0].decision === 'alert' ? 'Alert' : 'Clear'} after ${r.decisions[0].sites} sites`
-  : `${name}: no decision yet, score ${sgn(r.events.at(-1)?.score ?? 0)}`;
-$('#cap-form').addEventListener('submit', async ev => {
-  ev.preventDefault();
-  const sites = $('#cap-sites').value.split(/[\s,]+/).filter(Boolean), t0 = performance.now(), btn = $('#cap-run');
-  btn.disabled = true;
-  const tick = setInterval(() => ($('#cap-state').textContent = `Capturing ${sites.length} sites, ${capPath === 'mitm' ? 'second visit through mitmproxy' : 'direct'}… ${((performance.now() - t0) / 1000).toFixed(0)} s`), 250);
-  try {
-    const r = await api('/api/capture', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sites, path: capPath }) });
-    const { plan, tuned } = r, learnBy = new Map(r.learn.map(o => [o.site, o]));
-    const seen = new Set(r.test.map(o => o.site)), missing = r.hosts.filter(h => !seen.has(h));
-    $('#cap-state').textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s. ${r.test.length} handshakes in the second visit` +
-      (missing.length ? `. No handshake from: ${missing.join(', ')}` : '') + '.';
-    const alert = [plan, tuned].some(m => m.decisions[0]?.decision === 'alert');
-    $('#cap-verdict').innerHTML = `<span class="pill ${alert ? 'alert' : tuned.decisions[0] ? 'clear' : 'none'}">${verdict(plan, 'Plan')} · ${verdict(tuned, 'Tuned')}</span>`;
-    walkChart($('#cap-chart'), [{ name: 'Plan method', color: 'var(--plan)', dash: '6 5', pts: walk(plan.events) },
-      { name: 'Tuned method', color: 'var(--tuned)', pts: walk(tuned.events) }], tuned.params);
-    $('#cap-time').textContent = `Engine: ${(tuned.per_handshake_us / 1000).toFixed(3)} ms per handshake (budget 4 ms). VM start ${r.timing.boot_s.toFixed(1)} s.`;
-    $('#cap-rows').innerHTML = tuned.events.map((e, i) => {
-      const l = learnBy.get(e.site);
-      return `<tr data-site="${esc(e.site)}"><td title="TLS ${esc(e.tls)}">${esc(e.site)}</td>
-        <td class="mono${e.checks.d ? ' forged' : ''}">${l ? l.ttl : '—'} → ${e.ttl}</td>
-        <td class="mono${e.checks.a ? ' forged' : ''}" title="First visit: ${esc(l?.ja4s ?? 'none')}">${esc(e.ja4s)}</td>
-        <td>${e.checks.known ? chips({ A: e.checks.a, B: e.checks.b_seen ? e.checks.b : null, D: e.checks.d }) : '<span class="muted">not learned</span>'}</td>
-        <td class="num-c">${cell(plan.events[i])}</td><td class="num-c">${cell(e)}</td></tr>`;
-    }).join('') || '<tr><td colspan="6" class="muted">No handshakes in the capture.</td></tr>';
-    $('#cap-dl-learn').href = pcapUrl(r.pcaps.learn);
-    $('#cap-dl-test').href = pcapUrl(r.pcaps.test);
-    $('#cap-dl').hidden = false;
-  } catch (e) { $('#cap-state').textContent = `Error: ${e.message}`; }
-  finally { clearInterval(tick); btn.disabled = false; }
-});
-hoverTip($('#cap-chart'));
 
 // ---------------------------------------------------------------- Wireshark (tshark dissections of the lab captures)
 let wsDone = false, evidence;

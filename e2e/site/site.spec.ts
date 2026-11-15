@@ -1,5 +1,4 @@
 import { test, expect, Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
 
 // The deployed site at laptop size (1440 x 900). Every tab must fit one screen: no page scroll.
 // Screenshots of every tab land in artifacts/laptop-*.png for a visual check.
@@ -113,39 +112,4 @@ test('before vs after opens in a new window; both constraints on one screen each
   const before = parseFloat(await cmp.locator('#fp-vs .before .big').innerText()), after = parseFloat(await cmp.locator('#fp-vs .after .big').innerText());
   expect(after).toBeLessThan(before);
   await fitsOneScreen(cmp, 'compare-alerts');
-});
-
-// Live capture: real handshakes from a Vercel Sandbox VM. The sites are real, so only the shape of the result is fixed:
-// through mitmproxy every site changes (JA4S and TTL), so both methods alert at the 3-site minimum; direct never alerts.
-for (const [path, label] of [['mitm', 'Through mitmproxy'], ['direct', 'Direct']] as const) {
-  test(`live capture: ${path}`, async ({ page }) => {
-    test.setTimeout(120_000);
-    await page.goto('/#capture');
-    await page.getByTestId('cap-sites').fill('example.com, github.com, wikipedia.org, cloudflare.com');
-    await page.getByRole('button', { name: label, exact: true }).click();
-    await page.getByTestId('cap-run').click();
-    await expect(page.getByTestId('cap-state')).toHaveText(/^Done in/, { timeout: 90_000 });
-    await expect(page.locator('#cap-rows tr')).toHaveCount(4);
-    const verdict = page.getByTestId('cap-verdict');
-    if (path === 'mitm') {
-      await expect(verdict).toHaveText('Plan: Alert after 3 sites · Tuned: Alert after 3 sites');
-      await expect(page.locator('#cap-rows td.forged')).toHaveCount(8);  // JA4S and TTL changed on all 4 sites
-    } else await expect(verdict).not.toContainText('Alert');
-    for (const which of ['learn', 'test']) {  // the real captures, kept as the run's artifact
-      const [dl] = await Promise.all([page.waitForEvent('download'), page.locator(`#cap-dl-${which}`).click()]);
-      const file = `artifacts/live-${path}-${which}.pcap`;
-      await dl.saveAs(file);
-      const head = readFileSync(file);
-      expect(head.readUInt32LE(0), `${file} is a pcap`).toBe(0xa1b2c3d4);
-      expect(head.length).toBeGreaterThan(10_000);
-    }
-    await fitsOneScreen(page, `capture-${path}`);
-  });
-}
-
-test('live capture: fewer than 3 sites is refused', async ({ page }) => {
-  await page.goto('/#capture');
-  await page.getByTestId('cap-sites').fill('example.com, github.com');
-  await page.getByTestId('cap-run').click();
-  await expect(page.getByTestId('cap-state')).toHaveText(/^Error: Give at least 3 different sites/);
 });

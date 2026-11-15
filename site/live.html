@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zerohour Live</title>
+<meta name="description" content="zerohour on live traffic: real TLS handshakes to the sites you type, recorded in a VM on Vercel, with a real mitmproxy interceptor.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cpath d='M9 10h14L9 22h14' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d1d1f"/><path d="M9 10h14L9 22h14" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>zerohour</a>
+  <nav aria-label="Pages">
+    <a href="/">Demo</a>
+    <a href="/live" aria-current="page">Live capture</a>
+    <a href="/tuning">How we tuned it</a>
+    <a href="/compare" target="_blank" rel="noopener">Before vs after ↗</a>
+    <a href="https://github.com/md786-dotcom/zerohour" target="_blank" rel="noopener">Code ↗</a>
+  </nav>
+</div></header>
+
+<main>
+  <div class="seg tabs" role="tablist" aria-label="Live capture steps" id="tabs">
+    <button role="tab" aria-selected="true" data-tab="learn">1 · Learn</button>
+    <button role="tab" aria-selected="false" data-tab="test">2 · Test</button>
+    <button role="tab" aria-selected="false" data-tab="log">Evidence log</button>
+  </div>
+
+  <!-- 1 · Learn -->
+  <section class="panel" data-panel="learn" role="tabpanel">
+    <div class="head">
+      <div><h1>Step 1. Learn</h1><p>Type 3 to 8 websites or IPv4 addresses. A new Linux VM on Vercel is the client's network. The client visits each site one time and tcpdump records the packets. The C++ sensor in the VM reads each handshake. These handshakes are the baseline.</p></div>
+    </div>
+    <form class="controls" id="learn-form">
+      <label class="field grow"><span>Sites</span><input id="sites" data-testid="sites" value="example.com, github.com, wikipedia.org, cloudflare.com, 1.1.1.1" autocomplete="off" spellcheck="false"></label>
+      <button class="btn primary" id="learn-run" data-testid="learn-run"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>Learn</button>
+    </form>
+    <div class="row kpis">
+      <div class="card kpi"><div class="label">Handshakes recorded</div><div class="num" id="l-n" data-testid="l-n">0<small>of 0</small></div>
+        <div class="bar-track"><span id="l-bar"></span></div><div class="foot" id="l-foot" data-testid="l-state" aria-live="polite">Push Learn to start.</div></div>
+      <div class="card kpi"><div class="label">Sites learned</div><div class="num" id="l-learned" data-testid="l-learned">—</div><div class="foot">A site with no handshake is not learned.</div></div>
+      <div class="card kpi"><div class="label">Client VM</div><div class="num" id="l-vm">—</div><div class="foot" id="l-vm-foot">No VM yet.</div></div>
+      <div class="card kpi"><div class="label">Next step</div><div class="next"><button class="btn primary" id="to-test" data-testid="to-test" disabled>Go to step 2 →</button></div>
+        <div class="foot">The test uses this baseline and this VM.</div></div>
+    </div>
+    <div class="card fill"><div class="top"><div><h2>Baseline</h2><p class="sub">What the C++ sensor read from learn.pcap for each site.</p></div>
+      <a class="btn" id="learn-dl" hidden download="learn.pcap">learn.pcap</a></div>
+      <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Site</th><th>IPv4 address</th><th>TLS</th><th>Server fingerprint (JA4S)</th><th>Certificate key</th><th class="num-c">TTL</th><th>Status</th></tr></thead>
+        <tbody id="learn-rows" data-testid="learn-rows"><tr><td colspan="8" class="muted">No sites yet. Push Learn.</td></tr></tbody></table></div></div>
+  </section>
+
+  <!-- 2 · Test -->
+  <section class="panel" data-panel="test" role="tabpanel" hidden>
+    <div class="head">
+      <div><h1>Step 2. Test</h1><p id="t-head">The client visits the same sites again. Through mitmproxy: tick the sites that go through mitmproxy on the client's gateway. One ticked site is one change.</p></div>
+    </div>
+    <div class="controls wrap">
+      <div class="seg" role="group" aria-label="Path of the visits" id="path">
+        <button type="button" aria-pressed="true" data-path="direct">Direct</button><button type="button" aria-pressed="false" data-path="mitm">Through mitmproxy</button>
+      </div>
+      <div class="picks" id="picks" role="group" aria-label="Sites through mitmproxy" hidden></div>
+      <span class="grow"></span>
+      <button class="btn primary" id="test-run" data-testid="test-run" disabled><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>Run test</button>
+    </div>
+    <div class="row kpis wide-first">
+      <div class="card kpi score-card" id="t-score-card"><div class="label">Score, tuned method</div>
+        <div class="score-row"><div class="num big" id="t-score" data-testid="t-score">0.00</div>
+          <div class="gauge" aria-hidden="true"><span class="zone clear-z"></span><span class="zone alert-z"></span><i id="t-needle"></i>
+            <b class="mark lo"></b><b class="mark mid">0</b><b class="mark hi"></b></div></div>
+        <div class="foot" id="t-score-foot">Do step 1 first.</div></div>
+      <div class="card kpi"><div class="label">Handshakes</div><div class="num" id="t-n" data-testid="t-n">0<small>of 0</small></div>
+        <div class="bar-track"><span id="t-bar"></span></div><div class="foot" id="t-foot" data-testid="t-state" aria-live="polite">Do step 1 first.</div></div>
+      <div class="card kpi" id="t-dec-card"><div class="label">Decision</div><div class="num" id="t-decision" data-testid="t-decision">—</div><div class="foot" id="t-dec-foot">&nbsp;</div></div>
+      <div class="card kpi" id="t-time-card"><div class="label">Decision time, p99</div><div class="num" id="t-time" data-testid="t-time">—</div><div class="foot" id="t-time-foot">Engine time per handshake.</div></div>
+    </div>
+    <div class="row halves">
+      <div class="card"><div class="top"><div><h2>Score after each site</h2><p class="sub">Filled dot: the site changed. Open dot: the site is the same.</p></div></div>
+        <svg class="chart" id="t-chart" role="img" aria-label="Score after each site"></svg></div>
+      <div class="card"><div class="top"><div><h2>Each handshake</h2><p class="sub">A, B and D are the three checks against the baseline.</p></div>
+        <a class="btn" id="test-dl" hidden download="test.pcap">test.pcap</a></div>
+        <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Site</th><th>Path</th><th>Checks</th><th class="num-c">Step</th><th class="num-c">Score</th></tr></thead>
+          <tbody id="test-rows" data-testid="test-rows"><tr><td colspan="6" class="muted">No test yet.</td></tr></tbody></table></div></div>
+    </div>
+  </section>
+
+  <!-- Evidence log of this VM -->
+  <section class="panel" data-panel="log" role="tabpanel" hidden>
+    <div class="head">
+      <div><h1>Evidence log</h1><p>zerohour writes each notice and verdict of every test to a log. The VM keeps the log file. Each record contains the BLAKE2b-256 hash of the record before it.</p></div>
+      <div class="controls">
+        <button class="btn primary" id="verify" data-testid="verify">Verify the log</button>
+        <button class="btn" id="tamper" data-testid="tamper">Change one record</button>
+      </div>
+    </div>
+    <div class="card fill"><div class="top"><div><h2>All records</h2><p class="sub" id="log-sub">Run a test to fill the log.</p></div>
+      <span id="verify-result" data-testid="verify-result" aria-live="polite"></span></div>
+      <div class="scroll" id="log-scroll"><table><thead><tr><th class="num-c">#</th><th>Record</th><th>Stored hash</th><th>Computed now (BLAKE2b-256)</th><th class="num-c">Time per hash</th><th>Check</th></tr></thead><tbody id="log"></tbody></table></div></div>
+  </section>
+</main>
+<script type="module" src="/assets/live.js"></script>
+</body>
+</html>

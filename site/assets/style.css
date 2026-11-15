@@ -58,12 +58,33 @@ main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 28px 32
 .btn:disabled { opacity: .4; cursor: default; transform: none; }
 .btn svg { width: 12px; height: 12px; }
 .controls { display: flex; gap: 8px; align-items: center; }
+.controls.wrap { flex-wrap: wrap; flex: none; }
+form.controls { flex: none; }
+.grow { flex: 1; }
+.fill { flex: 1; }
+
+/* live page: site field, site picks, score gauge */
 .field { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 980px; padding: 0 6px 0 16px; min-height: 36px; box-shadow: inset 0 0 0 1px var(--fill-2); }
 .field span { font-size: 13px; color: var(--muted); }
 .field input { flex: 1; border: 0; background: none; font: 13px var(--mono); color: var(--text); min-width: 0; padding: 8px 0; outline: none; }
 .field:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
-.grow { flex: 1; }
-form.controls { flex: none; }
+.picks { display: flex; gap: 6px; flex-wrap: wrap; }
+.picks[hidden] { display: none; }
+.pick { border: 0; border-radius: 980px; padding: 6px 12px; font: 12.5px var(--mono); cursor: pointer; background: var(--fill-2); color: var(--muted); }
+.pick[aria-pressed="true"] { background: var(--alert-bg); color: var(--alert); box-shadow: inset 0 0 0 1.5px var(--alert); font-weight: 600; }
+.bar-track { height: 6px; border-radius: 3px; background: var(--fill-2); overflow: hidden; margin: 10px 0 6px; }
+.bar-track span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .35s var(--ease); }
+.kpi .next { margin: 12px 0 8px; }
+.kpis.wide-first { grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); }
+.score-row { display: flex; align-items: center; gap: 24px; }
+.kpi .num.big { font-size: 56px; min-width: 3.6ch; }
+.gauge { flex: 1; position: relative; height: 10px; border-radius: 5px; background: var(--fill-2); margin: 0 4px 18px; }
+.gauge .zone { position: absolute; top: 0; bottom: 0; width: 12.3%; }  /* 1.5 / (4.60 + 1.5) of each half: live.js setScore */
+.gauge .clear-z { left: 0; background: var(--clear-bg); box-shadow: inset -2px 0 0 var(--clear); border-radius: 5px 0 0 5px; }
+.gauge .alert-z { right: 0; background: var(--alert-bg); box-shadow: inset 2px 0 0 var(--alert); border-radius: 0 5px 5px 0; }
+.gauge i { position: absolute; top: -5px; width: 4px; height: 20px; margin-left: -2px; border-radius: 2px; background: var(--text); left: 50%; transition: left .35s var(--ease); }
+.gauge .mark { position: absolute; top: 16px; font: 500 11px var(--sans); color: var(--muted); white-space: nowrap; }
+.gauge .lo { left: 12.3%; transform: translateX(-50%); } .gauge .mid { left: 50%; transform: translateX(-50%); } .gauge .hi { right: 12.3%; transform: translateX(50%); }
 
 /* cards */
 .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 20px 22px; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -75,7 +96,6 @@ form.controls { flex: none; }
 .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: none; }
 .main2 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); flex: 1; }
 .halves { grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; }
-.halves.cap { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 
 .kpi .label { font-size: 13px; color: var(--muted); }
 .kpi .num { font-size: 36px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.15; font-variant-numeric: tabular-nums; margin-top: 4px; }
