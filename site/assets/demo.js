@@ -44,12 +44,13 @@ function render() {
   const t = R.timing, kt = $('#k-time').closest('.kpi');
   if (!t.n) {
     $('#k-time').textContent = '—';
-    $('#k-time-foot').textContent = 'Push Run. The time is averaged as the handshakes come in.';
+    $('#k-time-foot').textContent = 'Push Run. The time updates as the handshakes come in.';
   } else {
-    $('#k-time').innerHTML = `${(t.mean_us / 1000).toFixed(2)}<small>ms</small>`;
-    $('#k-time-foot').textContent = `C++ sensor on a real disk, ${t.n} handshakes. p99 ${(t.p99_us / 1000).toFixed(2)} ms, budget 4 ms. Flush: ${t.flush}.`;
+    $('#k-time').innerHTML = `${(t.p99_us / 1000).toFixed(2)}<small>ms</small>`;
+    $('#k-time-foot').textContent = `Mean ${(t.mean_us / 1000).toFixed(2)} ms. Budget 4 ms. C++ sensor on a real disk, ${t.n} handshakes.`;
   }
   kt.classList.toggle('bad', t.n > 0 && t.p99_us > t.budget_us);
+  kt.classList.toggle('good', t.n > 0 && t.p99_us <= t.budget_us);
   $('#clients').innerHTML = R.clients.map(x => {
     const w = Math.min(1, Math.abs(x.score) / p.upper) * 50, col = x.score >= 0 ? 'var(--alert)' : 'var(--clear)';
     const label = { alert: 'Alert', clear: 'Clear', testing: x.sites ? `Testing, ${x.sites} sites` : 'Waiting' }[x.verdict];

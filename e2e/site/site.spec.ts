@@ -34,6 +34,8 @@ test('live replay: run, stop, reset; the tuned method alerts only on the two int
   for (const ip of ['10.0.1.13', '10.0.1.16']) await expect(page.locator(`[data-testid=tile][data-ip="${ip}"]`)).toHaveAttribute('data-verdict', 'alert');
   await expect(page.getByTestId('k-fp')).toHaveText('0');
   await expect(page.getByTestId('k-caught')).toContainText('2');
+  await expect(page.locator('#k-time-foot')).toContainText('Mean');  // p99 is the big number, the mean is under it
+  expect(parseFloat(await page.getByTestId('k-time').innerText())).toBeLessThan(4);  // tuned: p99 within the 4 ms budget
   await fitsOneScreen(page, 'live-done');
 
   await page.getByRole('button', { name: 'Plan', exact: true }).click();
