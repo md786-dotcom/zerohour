@@ -173,7 +173,7 @@ td.num, th.num { text-align: right; }
       <li><button data-testid="step-learn" data-step="learn">Learn</button><p class="ste">The sensor records the normal handshake of each site. Do this step on a clean network.</p></li>
       <li><button data-testid="step-normal" data-step="normal">Normal</button><p class="ste">The client visits the same sites again. Each match moves the score down.</p></li>
       <li><button data-testid="step-onechange" data-step="onechange">One change</button><p class="ste">One site gets a new certificate. The score goes up one step, then down again.</p></li>
-      <li><button data-testid="step-multichange" data-step="multichange">Many changes</button><p class="ste">Three sites change in normal ways: new server software, a renewed certificate, a new route. The score stays below the alert line.</p></li>
+      <li><button data-testid="step-multichange" data-step="multichange">Many changes</button><p class="ste">Four sites change in normal ways, and one of them has two changes. The score stays below the alert line.</p></li>
       <li><button data-testid="step-attack" data-step="attack">Attack</button><p class="ste">An interceptor is between the client and all sites. Each changed site moves the score up.</p></li>
       <li><button data-testid="step-tamper" data-step="tamper">Tamper log</button><p class="ste">An attacker edits the log to hide an alert. The verify step must find the edit.</p></li>
       <li><button data-testid="step-verify" data-step="verify">Verify log</button><p class="ste">The sensor calculates the hash chain again. A changed record breaks the chain.</p></li>

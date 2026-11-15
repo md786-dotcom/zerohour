@@ -1,9 +1,10 @@
 #!/bin/sh
 # Multiple benign changes, before and after calibration. Run from this folder: ./demo3.sh
-# multichange.pcap: 3 of 8 sites change between visits, one per check:
+# multichange.pcap: 4 of 8 sites change between visits:
 #   site2 server upgraded its TLS stack -> A (new JA4S)
 #   site3 renewed its certificate       -> B (new key, still issued by "Lab CA")
 #   site6 route changed                 -> D (TTL moved by 7)
+#   site7 moved to another CDN node     -> A + D (new JA4S and new TTL on one site)
 # 1. plan model (../zerohour.conf)      2. calibrate theta0/theta1, write them into ./zerohour.conf
 # 3. benign + attack runs with ./zerohour.conf. 4. dashboard with ./zerohour.conf on port 8767 (PORT=...).
 # State in ./.zerohour3 and ./.zerohour3-web, so it runs beside demo.sh (8765) / demo2.sh (8766).

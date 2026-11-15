@@ -14,7 +14,7 @@ expect() {  # revisit theta0 theta1 [attack]
 }
 expect normal      0.9000 0.1000 attack   # 8/8 match -> (8+1)/(8+2); attack 0/8 -> (0+1)/(8+2)
 expect onechange   0.8000 0.1000 attack   # 7/8
-expect multichange 0.6000 0.1000 attack   # 5/8
+expect multichange 0.5000 0.1000 attack   # 4/8
 expect onechange   0.8000 0.2000          # no attack capture: theta1 from zerohour.conf
 # Attack capture given as the benign revisit: theta1 >= theta0 must be refused.
 if ./build/zerohour calibrate $P/learn.pcap $P/attack.pcap $P/normal.pcap >/dev/null 2>&1; then echo "FAIL swapped: accepted"; fail=1

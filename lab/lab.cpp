@@ -226,15 +226,16 @@ int main(int argc, char** argv) {
         for (int site = 1; site <= 8; ++site) {
             const std::string host = "site" + std::to_string(site) + ".lab";
             const bool attack = sc == 3;
-            // multichange: three benign changes, one per check: site2 new server stack (A), site3 renewed cert (B),
-            // site6 route change (D).
+            // multichange: four benign changes: site2 new server stack (A), site3 renewed cert (B), site6 route
+            // change (D), and site7 two at once, new server stack and new route (A + D, a move to another CDN node).
             const bool multi = sc == 4;
-            const Profile& prof = attack ? kInterceptor : (multi && site == 2) || site > 4 ? kOriginB : kOriginA;
+            const bool new_stack = multi && (site == 2 || site == 7);
+            const Profile& prof = attack ? kInterceptor : (site > 4) != new_stack ? kOriginB : kOriginA;
             std::string file = "site" + std::to_string(site);
             if (attack) file = "int-" + file;
             else if ((sc == 2 || multi) && site == 3) file = "site3-renewed";
             // Real servers: TTL jitters by at most 1, below the sensor's TTL delta. Interceptor: one LAN hop.
-            const int ttl = attack ? 63 : (site <= 4 ? 52 : 116) + (sc + site) % 3 - 1 + (multi && site == 6 ? 6 : 0);
+            const int ttl = attack ? 63 : (site <= 4 ? 52 : 116) + (sc + site) % 3 - 1 + (multi && (site == 6 || site == 7) ? 6 : 0);
 
             Flow f{out, 93u << 24 | 184u << 16 | 216u << 8 | (10u + site), uint16_t(40000 + sc * 100 + site),
                    ttl, 1700000000L + site - 1, 0x10000000u + site * 0x10000u, 0x20000000u + site * 0x10000u};

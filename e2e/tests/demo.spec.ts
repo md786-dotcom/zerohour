@@ -54,12 +54,12 @@ test('3. one change: one renewed certificate gives one notice and no alert', asy
   await expect(page.getByTestId('run-onechange')).toContainText('Clear');
 });
 
-test('3b. many changes: three benign changes (A, B, D) stay below the alert threshold', async () => {
+test('3b. many changes: four benign changes, one site with two (A + D), stay below the alert threshold', async () => {
   await page.getByTestId('step-multichange').click();
   await expect(page.getByTestId('verdict')).toHaveText('Pending');
   const mismatches = page.locator('[data-testid="event-row"][data-result="mismatch"]');
-  await expect(mismatches).toHaveCount(3);
-  const scores = ['-1.50', '0.58', '2.65', '1.15', '-0.35', '1.73', '0.22', '-1.28'];
+  await expect(mismatches).toHaveCount(4);
+  const scores = ['-1.50', '0.58', '2.65', '1.15', '-0.35', '1.73', '3.81', '2.30'];
   for (const [i, s] of scores.entries()) await expect(rows().nth(i)).toHaveAttribute('data-score', s);
   await expect(page.getByTestId('run-multichange')).toContainText('Pending');
 });

@@ -143,7 +143,7 @@ let labDone = false;
 const DESC = {
   normal: 'The client visits the 8 sites again. No site changed.',
   onechange: 'One site has a new certificate. This is a normal change.',
-  multichange: 'Three sites changed in normal ways: new server software, a new certificate and a new route.',
+  multichange: 'Four sites changed in normal ways. One site has two changes: new server software and a new route.',
   attack: 'An interceptor is between the client and all 8 sites.',
 };
 const walk = ev => {
