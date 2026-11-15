@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zerohour How Live Works</title>
+<meta name="description" content="The tools, libraries and changes that let zerohour capture and test live TLS handshakes.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cpath d='M9 10h14L9 22h14' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+  .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; flex: none; }
+  .flow .card { position: relative; padding: 16px 18px; }
+  .flow .card + .card::before { content: "→"; position: absolute; left: -22px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 18px; }
+  .flow h3 { margin: 6px 0 4px; font-size: 14px; }
+  .flow p { margin: 0; font-size: 12.5px; color: var(--text-2); }
+  .flow .where { font: 600 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  ol.run { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.75; color: var(--text-2); }
+  ol.run b { color: var(--text); }
+  td.wrap { white-space: normal; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d1d1f"/><path d="M9 10h14L9 22h14" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>zerohour</a>
+  <nav aria-label="Pages">
+    <a href="/">Demo</a>
+    <a href="/live">Live capture</a>
+    <a href="/how-live" aria-current="page">How live works</a>
+    <a href="/tuning">How we tuned it</a>
+    <a href="/compare" target="_blank" rel="noopener">Before vs after ↗</a>
+    <a href="https://github.com/md786-dotcom/zerohour" target="_blank" rel="noopener">Code ↗</a>
+  </nav>
+</div></header>
+
+<main>
+  <div class="seg tabs" role="tablist" aria-label="How live capture works" id="tabs">
+    <button role="tab" aria-selected="true" data-tab="path">1 · Data path</button>
+    <button role="tab" aria-selected="false" data-tab="tools">2 · Tools</button>
+    <button role="tab" aria-selected="false" data-tab="changes">3 · Changes</button>
+  </div>
+
+  <!-- 1 · Data path -->
+  <section class="panel" data-panel="path" role="tabpanel">
+    <div class="head"><div><h1>Data path</h1><p>The live page does not use simulated data. A Linux VM on Vercel connects to real sites. tcpdump records the packets. The C++ sensor reads the packets and the engine decides.</p></div></div>
+    <div class="flow">
+      <div class="card"><span class="where">Your browser</span><h3>Live page</h3><p>You type 3 to 8 sites and push Learn or Run test. The page shows each handshake when it arrives.</p></div>
+      <div class="card"><span class="where">Vercel function</span><h3>/api/live</h3><p>It checks the sites, starts the VM and sends commands to it. It sends one line of JSON for each event.</p></div>
+      <div class="card"><span class="where">VM · client</span><h3>10.9.0.2</h3><p>A network namespace. curl sends one HTTPS request to each site. tcpdump records this link.</p></div>
+      <div class="card"><span class="where">VM · gateway</span><h3>10.9.0.1</h3><p>It forwards the traffic to the internet. In a test it can add routers or send a site to mitmproxy.</p></div>
+      <div class="card"><span class="where">Internet</span><h3>Real sites</h3><p>Each site keeps one IPv4 address for the session, so the two visits go to the same server.</p></div>
+    </div>
+    <div class="row halves">
+      <div class="card"><div class="top"><div><h2>Step 1. Learn</h2><p class="sub">One time for each VM.</p></div></div>
+        <ol class="run">
+          <li>The function starts a new VM from a snapshot. This takes 1 to 3 seconds.</li>
+          <li>The VM makes the client network and finds one IPv4 address for each site.</li>
+          <li>tcpdump starts. The client visits each site one time.</li>
+          <li>After each visit, <b>zerohour show</b> reads the PCAP and gives JA4S, certificate key and TTL.</li>
+          <li>These handshakes are the <b>baseline</b>. You can download learn.pcap.</li>
+        </ol></div>
+      <div class="card"><div class="top"><div><h2>Step 2. Test</h2><p class="sub">Many times in the same VM.</p></div></div>
+        <ol class="run">
+          <li>The scenario sets the change for each site: none, new route, new TLS settings, or <b>mitmproxy</b>.</li>
+          <li>The client visits each site again. tcpdump records test-N.pcap.</li>
+          <li>The engine compares each handshake with the baseline: checks <b>A</b> (JA4S), <b>B</b> (key), <b>D</b> (TTL).</li>
+          <li>The tuned TRW adds one step for each site. At +4.60 it alerts.</li>
+          <li>Each notice and verdict goes into the BLAKE2b-256 hash chain in the VM.</li>
+        </ol></div>
+    </div>
+  </section>
+
+  <!-- 2 · Tools -->
+  <section class="panel" data-panel="tools" role="tabpanel" hidden>
+    <div class="head"><div><h1>Tools and libraries</h1><p>All parts run on Vercel. We did not add a server of our own.</p></div></div>
+    <div class="card fill"><div class="scroll"><table>
+      <thead><tr><th>Tool</th><th>Version</th><th>Where it runs</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><b>Vercel Sandbox</b> (@vercel/sandbox)</td><td class="mono">3.9.1</td><td>Vercel function</td><td class="wrap">Starts a Firecracker Linux VM from our snapshot, runs commands in it, reads files from it.</td></tr>
+        <tr><td><b>Ubuntu</b> and Linux kernel</td><td class="mono">26.04.1, 6.18</td><td>VM</td><td class="wrap">The VM. Root access lets us use network namespaces and raw packet capture.</td></tr>
+        <tr><td><b>iproute2</b> (ip netns, veth, ip rule)</td><td class="mono">Ubuntu package</td><td>VM</td><td class="wrap">Makes the client network, the gateway and the 3 extra routers for a route change.</td></tr>
+        <tr><td><b>iptables</b> (nat)</td><td class="mono">1.8.11</td><td>VM gateway</td><td class="wrap">NAT to the internet. REDIRECT sends port 443 of a site to mitmproxy.</td></tr>
+        <tr><td><b>tcpdump</b> (libpcap)</td><td class="mono">Ubuntu package</td><td>VM client</td><td class="wrap">Records the client's links to a PCAP file (<span class="mono">-i any -y LINUX_SLL --immediate-mode</span>).</td></tr>
+        <tr><td><b>curl</b></td><td class="mono">Ubuntu package</td><td>VM client</td><td class="wrap">One HTTPS request for each site. <span class="mono">--tls-max 1.2</span> makes the "new TLS settings" change.</td></tr>
+        <tr><td><b>mitmproxy</b> (mitmdump, transparent mode)</td><td class="mono">12.3.1</td><td>VM gateway</td><td class="wrap">The interceptor. It ends the client's TLS with its own certificate and opens a new TLS link to the site.</td></tr>
+        <tr><td><b>zerohour sensor</b> (C++17: OpenSSL 3, libpcap, libsodium)</td><td class="mono">f857a6a</td><td>VM</td><td class="wrap">Built from our repo in the snapshot. <span class="mono">zerohour show --json</span> reads each handshake from the PCAP.</td></tr>
+        <tr><td><b>Engine</b> (site/lib/engine.js, tuned TRW)</td><td class="mono">this repo</td><td>Vercel function</td><td class="wrap">The same engine as the rest of the site. A parity test checks it against the C++ sensor.</td></tr>
+        <tr><td><b>blakejs</b> (BLAKE2b-256)</td><td class="mono">1.2.1</td><td>Function and browser</td><td class="wrap">Makes the hash chain of the evidence log. Your browser computes each hash again to verify the log.</td></tr>
+        <tr><td><b>NDJSON over fetch</b> (TextDecoderStream)</td><td class="mono">web platform</td><td>Function and browser</td><td class="wrap">Sends one JSON line for each handshake, so the score and the progress update live.</td></tr>
+      </tbody></table></div></div>
+  </section>
+
+  <!-- 3 · Changes -->
+  <section class="panel" data-panel="changes" role="tabpanel" hidden>
+    <div class="head"><div><h1>Changes for live capture</h1><p>What we added to the project, and the problems that we found and fixed on real traffic.</p></div></div>
+    <div class="row halves">
+      <div class="card"><div class="top"><div><h2>What we added</h2></div></div><div class="scroll"><table>
+        <thead><tr><th>Change</th><th>File</th></tr></thead>
+        <tbody>
+          <tr><td class="wrap">A snapshot with tcpdump, mitmproxy and the sensor. The sensor is built from our GitHub repo. A new VM starts from it in 1 to 3 s.</td><td class="mono">scripts/snapshot.mjs</td></tr>
+          <tr><td class="wrap">VM commands: setup, start, visit, stop, route (mitmproxy), hops (route change), lock.</td><td class="mono">lib/capture.sh</td></tr>
+          <tr><td class="wrap">Learn and test in one VM, with a stream of events. The baseline and the log stay in the VM.</td><td class="mono">lib/live.js, api/live.js</td></tr>
+          <tr><td class="wrap">Scenarios. Direct: normal, one change, many changes. Through mitmproxy: attack.</td><td class="mono">assets/live.js</td></tr>
+          <tr><td class="wrap">An evidence log for the live page. The demo page and the live page use the same code.</td><td class="mono">assets/log.js</td></tr>
+          <tr><td class="wrap">Safety: private addresses are refused. Maximum 4 VMs. One test at a time in a VM. A VM stops when you close the page, or after 15 minutes (5 more for each test).</td><td class="mono">lib/live.js</td></tr>
+        </tbody></table></div></div>
+      <div class="card"><div class="top"><div><h2>Problems we found and fixed</h2></div></div><div class="scroll"><table>
+        <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td class="wrap">tcpdump wrote empty PCAP files: it kept packets in a buffer and lost them at stop.</td><td class="wrap"><span class="mono">--immediate-mode</span> and wait for "listening on".</td></tr>
+          <tr><td class="wrap">A command that started mitmproxy did not end.</td><td class="wrap">Start only mitmproxy in the background, with its output to a file.</td></tr>
+          <tr><td class="wrap">DNS can give another IPv4 address on the second visit. Then the two visits reach different servers.</td><td class="wrap">Keep one IPv4 address for each site for the session.</td></tr>
+          <tr><td class="wrap">The VM kernel has no iptables TTL target, so we could not change TTL for a "new route".</td><td class="wrap">Send the replies through 3 real routers (network namespaces). TTL goes down by 3.</td></tr>
+          <tr><td class="wrap">The first log hash was slow (3.8 ms) in a new function.</td><td class="wrap">Compute one hash when the module loads, as a running sensor does.</td></tr>
+          <tr><td class="wrap">Some sites change by themselves. github.com sometimes replies with TTL 245, not 48.</td><td class="wrap">No fix: this is real noise. The tuned method gives a TTL-only change only +0.23.</td></tr>
+        </tbody></table></div></div>
+    </div>
+  </section>
+</main>
+<script type="module">
+  const tabs = document.querySelector('#tabs');
+  const show = t => {
+    if (!['path', 'tools', 'changes'].includes(t)) t = 'path';
+    for (const b of tabs.children) b.setAttribute('aria-selected', b.dataset.tab === t);
+    for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== t;
+    history.replaceState(null, '', '#' + t);
+  };
+  for (const b of tabs.children) b.addEventListener('click', () => show(b.dataset.tab));
+  show(location.hash.slice(1));
+</script>
+</body>
+</html>
