@@ -1,8 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-// The live page on real traffic: one VM, step 1 learns 5 real sites, then five tests on the same baseline:
-// direct normal / one change / many changes, mitmproxy one change / attack. Then the VM's log.
+// The live page on real traffic: one VM, step 1 learns 5 real sites, then four tests on the same baseline:
+// direct normal / one change / many changes, then mitmproxy attack. Then the VM's log.
 // The sites are real, so only the shape of each result is fixed. The PCAPs and screenshots are the run's artifacts.
 
 async function fitsOneScreen(page: Page, name: string) {
@@ -71,12 +71,6 @@ test('live page: learn, then the direct and mitmproxy scenarios; the log verifie
     await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
     await expect(page.locator('#t-chart path')).toHaveCount(1);  // one score line
     await fitsOneScreen(page, 'live-direct-many');
-  });
-
-  await test.step('mitmproxy, one change: one site intercepted, no alert', async () => {
-    await scenario('Through mitmproxy', 'One change');
-    await expect(changed('mitmproxy')).toHaveCount(1);
-    await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
   });
 
   await test.step('mitmproxy, attack: every site intercepted, alert after 3 sites', async () => {

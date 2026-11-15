@@ -118,10 +118,6 @@ const SCEN = {
       plan: h => Object.fromEntries(['route', 'tls', 'route', 'both'].slice(0, h.length).map((k, i) => [h[i], k])) },
   },
   mitm: {
-    normal: { label: 'Normal', text: 'mitmproxy is on the client’s gateway, but no site goes through it.', plan: () => ({}) },
-    one: { label: 'One change', text: 'One site goes through mitmproxy.', plan: h => ({ [h[1]]: 'mitm' }) },
-    many: { label: 'Many changes', text: 'Two sites go through mitmproxy. The test needs changes on 3 sites to alert.',
-      plan: h => ({ [h[0]]: 'mitm', [h[1]]: 'mitm' }) },
     attack: { label: 'Attack', text: 'Every site goes through mitmproxy: an interceptor is between the client and all sites.',
       plan: h => Object.fromEntries(h.map(x => [x, 'mitm'])) },
   },
@@ -131,7 +127,7 @@ const CHANGE = { none: ['none', 'same as step 1'], route: ['none', 'new route'],
 let path = 'direct', scen = 'normal';
 const plan = () => SCEN[path][scen].plan(sites.map(s => s.host));
 function setScen() {
-  if (!SCEN[path][scen]) scen = 'normal';
+  if (!SCEN[path][scen]) scen = Object.keys(SCEN[path])[0];  // mitmproxy has only Attack
   $('#scen').innerHTML = Object.entries(SCEN[path]).map(([k, v]) =>
     `<button type="button" aria-pressed="${k === scen}" data-scen="${k}">${v.label}</button>`).join('');
   for (const b of $('#scen').children) b.addEventListener('click', () => { scen = b.dataset.scen; setScen(); });
