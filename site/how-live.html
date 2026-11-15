@@ -91,8 +91,8 @@
 
   <!-- 3 · Changes -->
   <section class="panel" data-panel="changes" role="tabpanel" hidden>
-    <div class="head"><div><h1>Changes for live capture</h1><p>What we added to the project, and the problems that we found and fixed on real traffic.</p></div></div>
-    <div class="row halves">
+    <div class="head"><div><h1>Changes for live capture</h1><p>What we added to the project for live capture.</p></div></div>
+    <div class="row" style="flex:1">
       <div class="card"><div class="top"><div><h2>What we added</h2></div></div><div class="scroll"><table>
         <thead><tr><th>Change</th><th>File</th></tr></thead>
         <tbody>
@@ -102,16 +102,6 @@
           <tr><td class="wrap">Scenarios. Direct: normal, one change, many changes. Through mitmproxy: attack.</td><td class="mono">assets/live.js</td></tr>
           <tr><td class="wrap">An evidence log for the live page. The demo page and the live page use the same code.</td><td class="mono">assets/log.js</td></tr>
           <tr><td class="wrap">Safety: private addresses are refused. Maximum 4 VMs. One test at a time in a VM. A VM stops when you close the page, or after 15 minutes (5 more for each test).</td><td class="mono">lib/live.js</td></tr>
-        </tbody></table></div></div>
-      <div class="card"><div class="top"><div><h2>Problems we found and fixed</h2></div></div><div class="scroll"><table>
-        <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
-        <tbody>
-          <tr><td class="wrap">tcpdump wrote empty PCAP files: it kept packets in a buffer and lost them at stop.</td><td class="wrap"><span class="mono">--immediate-mode</span> and wait for "listening on".</td></tr>
-          <tr><td class="wrap">A command that started mitmproxy did not end.</td><td class="wrap">Start only mitmproxy in the background, with its output to a file.</td></tr>
-          <tr><td class="wrap">DNS can give another IPv4 address on the second visit. Then the two visits reach different servers.</td><td class="wrap">Keep one IPv4 address for each site for the session.</td></tr>
-          <tr><td class="wrap">The VM kernel has no iptables TTL target, so we could not change TTL for a "new route".</td><td class="wrap">Send the replies through 3 real routers (network namespaces). TTL goes down by 3.</td></tr>
-          <tr><td class="wrap">The first log hash was slow (3.8 ms) in a new function.</td><td class="wrap">Compute one hash when the module loads, as a running sensor does.</td></tr>
-          <tr><td class="wrap">Some sites change by themselves. github.com sometimes replies with TTL 245, not 48.</td><td class="wrap">No fix: this is real noise. The tuned method gives a TTL-only change only +0.23.</td></tr>
         </tbody></table></div></div>
     </div>
   </section>
