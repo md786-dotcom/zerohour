@@ -1,0 +1,2 @@
+{"pcap":"lab/pcaps/normal.pcap","handshakes":8,"reps":2000,"weighted":true,"parse_us":{"p50":32.46,"p99":57.80},"decide_us":{"p50":0.12,"p99":52.75,"max":636.04},"total_p99_us":110.55,"budget_us":4000}
+{"pcap":"lab/pcaps/attack.pcap","handshakes":8,"reps":2000,"weighted":true,"parse_us":{"p50":32.68,"p99":65.27},"decide_us":{"p50":3.00,"p99":85.46,"max":1051.46},"total_p99_us":150.72,"budget_us":4000}

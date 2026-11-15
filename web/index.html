@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>zerohour</title>
+<style>
+/* Apple-style, light only: white page, #f5f5f7 tiles, one blue accent; red and green only for verdicts. */
+:root {
+  --bg: #fff; --tile: #f5f5f7; --card: #fff; --text: #1d1d1f; --quiet: #6e6e73; --faint: #86868b;
+  --line: rgba(0,0,0,.08); --accent: #0071e3; --link: #0066cc;
+  --red: #ff3b30; --red-text: #d70015; --green: #34c759; --green-text: #1d7c35; --grey: #86868b; --chip: #e8e8ed;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; font-style: normal; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.47 var(--sans);
+  letter-spacing: -.009em; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+/* Two columns: steps and verdict stay in view; the right side shows one page at a time. */
+.app { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 48px; max-width: 1480px; margin: 0 auto; padding: 24px 40px 64px; }
+aside { position: sticky; top: 24px; align-self: start; display: grid; gap: 20px; max-height: calc(100vh - 48px); overflow-y: auto; padding-right: 4px; }
+.card { background: var(--tile); border-radius: 22px; padding: 24px 26px; }
+
+.wordmark { font-weight: 600; font-size: 14px; letter-spacing: 0; margin: 0 0 14px; color: var(--quiet); }
+.wordmark b { color: var(--text); font-weight: 600; }
+.intro { margin: 16px 0 32px; }
+.intro h1 { font-size: 44px; line-height: 1.07; letter-spacing: -.03em; font-weight: 700; margin: 0 0 12px; }
+.intro .ste { font-size: 19px; line-height: 1.42; max-width: 38em; }
+h2 { font-size: 32px; line-height: 1.12; letter-spacing: -.024em; font-weight: 700; margin: 0 0 8px; }
+h3 { font-size: 17px; line-height: 1.3; letter-spacing: -.016em; margin: 0; font-weight: 600; }
+.ste { color: var(--quiet); margin: 0; }
+.lead { color: var(--quiet); font-size: 17px; line-height: 1.47; margin: 0 0 28px; max-width: 46em; }
+.quiet { color: var(--quiet); }
+.error { background: #fff2f1; color: var(--red-text); border-radius: 14px; padding: 12px 16px; margin: 0; font-weight: 500; }
+.error[hidden] { display: none; }
+
+.verdict { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px; background: var(--tile); }
+.verdict .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--grey); }
+.big { font-size: 52px; font-weight: 700; letter-spacing: -.035em; line-height: 1; margin: 0; }
+.verdict [data-testid=verdict-detail] { grid-column: 1 / -1; margin: 12px 0 4px; font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.verdict .ste { grid-column: 1 / -1; font-size: 14px; }
+.alert .dot { background: var(--red); } .alert .big { color: var(--red-text); }
+.clear .dot { background: var(--green); } .clear .big { color: var(--green-text); }
+
+.steps-h { margin-bottom: 4px; }
+.steps-sub { font-size: 13px; margin: 0 0 10px; }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 128px 1fr; gap: 14px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.steps .ste { font-size: 12.5px; line-height: 1.38; }
+button { font: 500 14px/1 var(--sans); letter-spacing: -.01em; border-radius: 980px; padding: 10px 16px; cursor: pointer;
+  border: 0; background: var(--card); color: var(--link); box-shadow: inset 0 0 0 1px var(--line);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background-color .2s, color .2s, opacity .2s; }
+.steps button { width: 100%; white-space: nowrap; padding: 9px 12px; }
+button:hover { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+button.next { background: var(--accent); color: #fff; box-shadow: none; }
+button.next:hover { background: #0077ed; color: #fff; }
+button.done { color: var(--text); }
+button.done::before { content: ""; width: 5px; height: 10px; margin: -3px 2px 0 0; border: solid var(--green); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+button.ghost { background: none; box-shadow: none; color: var(--link); padding: 6px 0; }
+button:disabled { opacity: .5; cursor: progress; }
+:focus-visible { outline: 3px solid rgba(0,113,227,.45); outline-offset: 2px; }
+.counts { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* Segmented control */
+.tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; background: var(--tile); border-radius: 980px; padding: 4px; margin-bottom: 32px; max-width: 100%; }
+.tabs button { transition: none; background: none; box-shadow: none; color: var(--text); padding: 9px 18px; font-weight: 500; }
+.tabs button:hover { color: var(--text); background: rgba(0,0,0,.04); box-shadow: none; }
+.tabs button[aria-selected="true"] { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 3px 8px rgba(0,0,0,.06); }
+.page[hidden] { display: none; }
+.page { display: grid; gap: 24px; }
+.page > .card { padding: 36px 40px; }
+
+.chart-wrap svg { width: 100%; height: 250px; display: block; overflow: visible; }
+svg text { fill: var(--faint); font: 500 12px var(--sans); }
+svg .axis { stroke: rgba(0,0,0,.12); }
+svg .thr { stroke-dasharray: 4 5; stroke-width: 1.25; }
+.runs { display: flex; flex-wrap: wrap; gap: 10px 32px; margin-top: 20px; font-size: 14px; }
+.runs > div { display: flex; align-items: center; gap: 8px; }
+.swatch { width: 22px; height: 0; border-top: 2px solid var(--grey); }
+.s-onechange { border-top-style: dashed; } .s-multichange { border-top-style: dotted; } .s-attack { border-top-color: var(--red); }
+.v-alert { color: var(--red-text); font-weight: 600; } .v-clear { color: var(--green-text); font-weight: 600; }
+
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.col { background: var(--card); border-radius: 18px; padding: 22px 24px 10px; min-width: 0; }
+.col header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.col .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--faint); margin: 0 0 2px; }
+.col h3 { font-size: 21px; letter-spacing: -.02em; }
+.crow { padding: 12px 0; border-top: 1px solid var(--line); }
+.crow .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; font-weight: 600; font-size: 14px; }
+.crow dl { display: grid; grid-template-columns: 38px 1fr; gap: 1px 10px; margin: 0; }
+.crow dt { color: var(--faint); font-size: 11.5px; font-weight: 500; padding-top: 1px; }
+.crow dd { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.crow s { display: block; color: var(--faint); text-decoration-thickness: 1px; }
+.crow dd { overflow-wrap: normal; word-break: keep-all; }
+.chg { color: var(--red-text); font-weight: 600; }
+.chips { display: inline-flex; gap: 4px; }
+.chip { font: 600 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 6px; background: var(--chip); color: var(--quiet); }
+.chip.bad { background: var(--red-text); color: #fff; }
+.key { margin: 20px 0 0; font-size: 13px; }
+
+.mono { font-family: var(--mono); font-size: 12px; }
+.table-wrap { overflow-x: auto; background: var(--card); border-radius: 16px; padding: 8px 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--faint); font-size: 12px; padding: 12px 12px 10px 0; }
+td { border-top: 1px solid var(--line); padding: 11px 12px 11px 0; white-space: nowrap; }
+td.num, th.num { text-align: right; }
+.r-mismatch { color: var(--red-text); font-weight: 600; }
+.new-test { color: var(--faint); font-size: 12px; margin-left: 8px; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 28px 24px; margin: 0; }
+.facts dt { color: var(--faint); font-size: 13px; font-weight: 500; }
+.facts dd { margin: 4px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.facts dd .ste { font-size: 13px; font-weight: 400; letter-spacing: -.005em; line-height: 1.4; margin-top: 4px; }
+.how { margin: 0; padding: 0; list-style: none; counter-reset: h; display: grid; gap: 18px; max-width: 46em; }
+.how li { counter-increment: h; display: grid; grid-template-columns: 32px 1fr; font-size: 17px; line-height: 1.47; }
+.how li::before { content: counter(h); font-weight: 600; color: var(--accent); }
+
+/* Architecture: packets flow left to right, row by row; the stores sit under the stage that uses them. */
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; position: relative; }
+.node { background: var(--card); border-radius: 16px; padding: 18px 18px 16px; position: relative; }
+.node .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: #fff; font: 600 11px/1 var(--sans); margin-bottom: 10px; }
+.node.core .n { background: var(--accent); }
+.node h3 { font-size: 15px; margin-bottom: 2px; }
+.node .tech { font: 500 11.5px/1.3 var(--mono); color: var(--faint); margin: 0 0 8px; }
+.node .ste { font-size: 13px; line-height: 1.42; }
+.flow .node:not(:nth-of-type(4n))::after { content: ""; position: absolute; right: -22px; top: 30px; width: 16px; height: 2px; background: #c7c7cc; }
+.flow .node:not(:nth-of-type(4n))::before { content: ""; position: absolute; right: -22px; top: 26px; border: 5px solid transparent; border-left: 6px solid #c7c7cc; transform: translateX(10px); }
+.wrap-arrow { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; font-weight: 500; margin: -8px 0; }
+.wrap-arrow::before { content: ""; flex: 1; border-top: 2px dashed #d2d2d7; }
+.wrap-arrow::after { content: ""; flex: 1; border-top: 2px dashed #d2d2d7; }
+.stores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; margin-top: 28px; }
+.node.store { background: transparent; box-shadow: inset 0 0 0 1.5px #d2d2d7; border-radius: 16px; }
+.node.store .n { background: var(--faint); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 24px; font-size: 13px; color: var(--quiet); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+@media (max-width: 1100px) { .flow, .stores { grid-template-columns: repeat(2, minmax(0, 1fr)); } .flow .node::after, .flow .node::before { display: none; } .wrap-arrow { display: none; } }
+@media (max-width: 600px) { .flow, .stores { grid-template-columns: 1fr; } }
+
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; gap: 28px; padding: 24px 16px 48px; }
+  aside { position: static; max-height: none; overflow: visible; }
+  .compare { grid-template-columns: 1fr; }
+  .page > .card { padding: 24px 20px; }
+  .steps li { grid-template-columns: 108px 1fr; }
+  .big { font-size: 48px; }
+  .intro h1 { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+
+  <section class="card verdict" id="verdict" aria-live="polite" aria-label="Verdict">
+    <span class="dot" aria-hidden="true"></span>
+    <p class="big" data-testid="verdict">Pending</p>
+    <p data-testid="verdict-detail">Learn a baseline, then run a scenario.</p>
+    <p class="ste" id="verdict-ste">The sensor needs more sites to make a decision.</p>
+  </section>
+
+  <p class="error" data-testid="error" role="alert" hidden></p>
+
+  <section class="card" aria-labelledby="demo-h">
+    <h3 id="demo-h" class="steps-h">Run the demo</h3>
+    <p class="ste steps-sub">Do the steps in sequence. Each step sends a recorded lab capture to the sensor.</p>
+    <ol class="steps">
+      <li><button data-testid="step-learn" data-step="learn">Learn</button><p class="ste">The sensor records the normal handshake of each site. Do this step on a clean network.</p></li>
+      <li><button data-testid="step-normal" data-step="normal">Normal</button><p class="ste">The client visits the same sites again. Each match moves the score down.</p></li>
+      <li><button data-testid="step-onechange" data-step="onechange">One change</button><p class="ste">One site gets a new certificate. The score goes up one step, then down again.</p></li>
+      <li><button data-testid="step-multichange" data-step="multichange">Many changes</button><p class="ste">Three sites change in normal ways: new server software, a renewed certificate, a new route. The score stays below the alert line.</p></li>
+      <li><button data-testid="step-attack" data-step="attack">Attack</button><p class="ste">An interceptor is between the client and all sites. Each changed site moves the score up.</p></li>
+      <li><button data-testid="step-tamper" data-step="tamper">Tamper log</button><p class="ste">An attacker edits the log to hide an alert. The verify step must find the edit.</p></li>
+      <li><button data-testid="step-verify" data-step="verify">Verify log</button><p class="ste">The sensor calculates the hash chain again. A changed record breaks the chain.</p></li>
+    </ol>
+    <div class="counts">
+      <span class="quiet">Baseline <strong data-testid="baseline-count">0</strong> sites · Log <strong class="log-count">0</strong> records</span>
+      <button data-testid="reset" data-step="reset" class="ghost" title="Delete the baseline and the log.">Reset</button>
+    </div>
+  </section>
+
+</aside>
+
+<main>
+  <header class="intro">
+    <p class="wordmark"><b>zerohour</b> sensor</p>
+    <h1>Finds the interceptor. Never reads the traffic.</h1>
+    <p class="ste">This sensor finds an attacker between a client and a website. It reads only the TLS handshake and does not decrypt the traffic.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Pages">
+    <button role="tab" data-page="model" data-testid="tab-model">How it works</button>
+    <button role="tab" data-page="baseline" data-testid="tab-baseline">Baseline</button>
+    <button role="tab" data-page="run" data-testid="tab-run">Score walk</button>
+    <button role="tab" data-page="compare" data-testid="tab-compare">Before / after</button>
+    <button role="tab" data-page="log" data-testid="tab-log">Log</button>
+    <button role="tab" data-page="arch" data-testid="tab-arch">Architecture</button>
+  </nav>
+
+  <div class="page" data-page="model">
+    <section class="card">
+      <h2>How it works.</h2>
+      <p class="lead">The sensor uses the Threshold Random Walk method (Jung and others, 2004). It adds small signs from many sites until it can make a decision.</p>
+      <ol class="how">
+        <li>The interceptor does not have the private key of each real server. Thus the handshake of each site changes a little.</li>
+        <li>One change is weak evidence, because real sites also change. Many changes on many sites for one client are strong evidence.</li>
+        <li>Each client has a score that starts at 0. A mismatch adds +2.08 and a match adds −1.50.</li>
+        <li>At +4.60 the sensor sends an alert. At −4.60 it clears the client. After each decision, a new test starts at 0.</li>
+      </ol>
+    </section>
+    <section class="card">
+      <h2>The model.</h2>
+      <p class="lead">These values come from the config file. H0: no interceptor is on the path. H1: an interceptor is on the path.</p>
+      <dl class="facts" id="model"></dl>
+    </section>
+  </div>
+
+  <div class="page" data-page="baseline" hidden>
+    <section class="card">
+      <h2>Baseline.</h2>
+      <p class="lead">These are the values that the sensor learned for each site. The sensor compares each new handshake with these values.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Site</th><th>Server fingerprint (JA4S)</th><th>Certificate key</th><th class="num">TTL</th></tr></thead>
+          <tbody id="baseline"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="page" data-page="run" hidden>
+    <section class="card chart-wrap" aria-labelledby="chart-h">
+      <h2 id="chart-h">The score walk.</h2>
+      <p class="lead">Each line is one run, up to its first decision. A large dot is a changed site and a small dot is a match.</p>
+      <svg data-testid="score-chart" id="chart" role="img" aria-label="Score per site counted, with alert and clear thresholds"></svg>
+      <div class="runs" id="runs"></div>
+    </section>
+    <section class="card" aria-labelledby="ev-h">
+      <h2 id="ev-h">Events.</h2>
+      <p class="lead" id="ev-lead">Each row is one site. After each decision, a new test starts at 0.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Site</th><th>Result</th><th>Checks</th><th class="num">Step</th><th class="num">Score</th><th>Decision</th></tr></thead>
+          <tbody id="events"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="page" data-page="compare" hidden>
+    <section class="card" aria-labelledby="cmp-h">
+      <h2 id="cmp-h">Before and after.</h2>
+      <p class="lead">The left column shows the sites without an interceptor. The right column shows the same sites with an interceptor. A red value is different from the baseline, and the old value is struck through.</p>
+      <div class="compare">
+        <div class="col" data-testid="compare-before"></div>
+        <div class="col" data-testid="compare-after"></div>
+      </div>
+      <p class="key quiet" style="margin-top:12px"><strong>A</strong>: the server fingerprint (JA4S) is new. <strong>B</strong>: the certificate key is new. <strong>D</strong>: the hop count (TTL) changed by more than 2. A red chip shows a failed check.</p>
+    </section>
+  </div>
+
+  <div class="page" data-page="arch" hidden>
+    <section class="card" aria-labelledby="arch-h">
+      <h2 id="arch-h">Architecture.</h2>
+      <p class="lead">Packets go in, and one score for each client comes out. The sensor reads only the handshake and does not decrypt the traffic.</p>
+      <div class="flow">
+        <div class="node" data-testid="arch-node"><span class="n">1</span><h3>Capture</h3><p class="tech">libpcap</p><p class="ste">The sensor reads packets from a mirror port or a PCAP file. It keeps only the TCP packets.</p></div>
+        <div class="node" data-testid="arch-node"><span class="n">2</span><h3>TCP reassembly</h3><p class="tech">src/sensor.cpp</p><p class="ste">The sensor puts the TCP pieces in the correct sequence. It keeps only the first bytes, because the handshake is there.</p></div>
+        <div class="node" data-testid="arch-node"><span class="n">3</span><h3>TLS parser</h3><p class="tech">src/tls.cpp</p><p class="ste">The parser reads the ClientHello, the ServerHello and the certificate. It does not decrypt the traffic.</p></div>
+        <div class="node" data-testid="arch-node"><span class="n">4</span><h3>Fingerprints</h3><p class="tech">OpenSSL · SHA-256</p><p class="ste">The sensor makes the JA4 and JA4S fingerprints and a hash of the server key. These values identify the TLS software and the server.</p></div>
+        <p class="wrap-arrow">then</p>
+        <div class="node" data-testid="arch-node"><span class="n">5</span><h3>Checks A, B, D</h3><p class="tech">src/sensor.cpp</p><p class="ste">The sensor compares each handshake with the baseline of the site. One failed check gives a mismatch.</p></div>
+        <div class="node core" data-testid="arch-node"><span class="n">6</span><h3>TRW score</h3><p class="tech">src/trw.cpp</p><p class="ste">The sensor adds +2.08 for a mismatch and −1.50 for a match. At +4.60 it sends an alert, and at −4.60 it clears the client.</p></div>
+        <div class="node" data-testid="arch-node"><span class="n">7</span><h3>Alert log</h3><p class="tech">libsodium · BLAKE2b</p><p class="ste">The sensor writes each notice and decision to the log. Each record contains the hash of the record before it.</p></div>
+        <div class="node" data-testid="arch-node"><span class="n">8</span><h3>Command line and dashboard</h3><p class="tech">zerohour learn · run · verify · serve</p><p class="ste">The command line starts each mode. The dashboard shows the result of each step.</p></div>
+      </div>
+      <div class="stores">
+        <div class="node store" data-testid="arch-node"><span class="n">B</span><h3>Baseline store</h3><p class="tech">baseline.tsv</p><p class="ste">The learn step writes the normal values of each site to this file. The checks read these values.</p></div>
+        <div class="node store" data-testid="arch-node"><span class="n">C</span><h3>Config file</h3><p class="tech">zerohour.conf</p><p class="ste">This file gives θ₀, θ₁, α, β and the TTL limit. Change these values to tune the test.</p></div>
+      </div>
+      <p class="legend"><span><i style="background:var(--accent)"></i>The method from the paper (Jung and others, 2004)</span><span><i style="background:var(--text)"></i>Pipeline stage</span><span><i style="box-shadow:inset 0 0 0 1.5px #d2d2d7"></i>Data that the sensor stores or reads</span></p>
+    </section>
+  </div>
+  <div class="page" data-page="log" hidden>
+    <section class="card" aria-labelledby="log-h">
+      <h2 id="log-h">Integrity.</h2>
+      <p class="lead">The sensor writes each notice and decision to the log. Each record contains the hash of the record before it. If a person edits the log, the verify step finds the first changed record.</p>
+      <dl class="facts">
+        <div><dt>Log records</dt><dd class="log-count">0</dd></div>
+        <div><dt>Tamper</dt><dd id="tamper-result">Not tampered</dd></div>
+        <div><dt>Verify</dt><dd data-testid="verify-result" id="verify-result">Not verified</dd></div>
+      </dl>
+    </section>
+  </div>
+</main>
+</div>
+
+<script>
+const ORDER = ['learn', 'normal', 'onechange', 'multichange', 'attack', 'tamper', 'verify'];
+const RUNS = ['normal', 'onechange', 'multichange', 'attack'];
+const NAMES = { normal: 'Normal', onechange: 'One change', multichange: 'Many changes', attack: 'Attack' };
+const CHECKS = { A: 'server fingerprint', B: 'certificate key', D: 'network path' };
+// Each step opens its own page.
+const PAGE_OF = { learn: 'baseline', normal: 'run', onechange: 'run', multichange: 'run', attack: 'run', tamper: 'log', verify: 'log', reset: 'model' };
+const VERDICT_STE = {
+  alert: 'An interceptor is on the path of this client. Examine the client for a false root certificate.',
+  clear: 'No interceptor is on the path of this client. The sensor starts a new test.',
+  pending: 'The sensor needs more sites to make a decision.',
+};
+const $ = s => document.querySelector(s);
+let S;
+const fresh = () => ({ runs: {}, latest: null, done: new Set(), params: S?.params, baseline: 0, log: 0, tamper: null, verify: null, sites: [], page: 'model' });
+S = fresh();
+
+// Site names, fingerprints etc. come from captured packets: always escape before innerHTML.
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+// nudge so a binary 4.595 rounds to 4.60, as printed by the sensor
+const num = (x, d = 2) => (x >= 0 ? '+' : '') + (Number(x) + Math.sign(x) * 1e-9).toFixed(d);
+const short = k => k ? (k.length > 16 ? k.slice(0, 16) + '…' : k) : '—';
+
+async function api(path, method = 'POST') {
+  const r = await fetch(path, { method });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+function verdictOf(run) {
+  const d = run.decisions.find(d => d.decision === 'alert') || run.decisions[0];
+  if (!d) return { cls: 'pending', word: 'Pending', detail: `No decision after ${run.events.length} sites` };
+  const word = d.decision === 'alert' ? 'Alert' : 'Clear';
+  return { cls: d.decision, word, detail: `${word} after ${d.sites} sites · score ${num(d.score)}` };
+}
+
+const chips = c => `<span class="chips">${Object.keys(CHECKS).filter(k => k in (c || {})).map(k =>
+  `<span class="chip${c[k] ? ' bad' : ''}" title="${k}: ${CHECKS[k]} ${c[k] ? 'changed' : 'same'}">${k}</span>`).join('')}</span>`;
+
+function drawChart() {
+  const svg = $('#chart'), W = svg.clientWidth || 640, H = 260, L = 40, R = 84, T = 16, B = 40;
+  const p = S.params || { upper: 4.595, lower: -4.595 };
+  // shortcut: plots the first client only and stops at its first decision (the x axis resets on each new test).
+  const series = RUNS.filter(k => S.runs[k]).map(k => {
+    const ev = S.runs[k].events, pts = [[0, 0, '']];
+    for (const e of ev) {
+      if (e.client !== ev[0].client || (e.result !== 'match' && e.result !== 'mismatch')) continue;
+      pts.push([e.sites, e.score, e.result]);
+      if (e.decision !== 'pending') break;
+    }
+    return { k, pts };
+  });
+  const all = series.flatMap(s => s.pts);
+  const xmax = Math.max(6, ...all.map(q => q[0]));
+  const ymax = Math.max(p.upper, ...all.map(q => q[1])) + 1.5, ymin = Math.min(p.lower, ...all.map(q => q[1])) - 1.5;
+  const x = v => L + v / xmax * (W - L - R), y = v => T + (ymax - v) / (ymax - ymin) * (H - T - B);
+  let s = `<line class="axis" x1="${L}" x2="${x(xmax)}" y1="${y(0)}" y2="${y(0)}"/>
+    <text x="${L - 8}" y="${y(0) + 4}" text-anchor="end">0</text>
+    <text x="${(L + x(xmax)) / 2}" y="${H - 4}" text-anchor="middle">sites counted</text>`;
+  for (let i = 1; i <= xmax; i++) s += `<text x="${x(i)}" y="${H - 22}" text-anchor="middle">${i}</text>`;
+  for (const [v, label, col] of [[p.upper, 'alert', 'var(--red)'], [p.lower, 'clear', 'var(--green)']])
+    s += `<line class="thr" stroke="${col}" x1="${L}" x2="${x(xmax)}" y1="${y(v)}" y2="${y(v)}"/>
+      <text x="${x(xmax) + 8}" y="${y(v) + 4}">${num(v)} ${label}</text>`;
+  for (const { k, pts } of series) {
+    const col = k === 'attack' ? 'var(--red)' : 'var(--grey)';
+    s += `<path data-scenario="${k}" fill="none" stroke="${col}" stroke-width="2.25" stroke-linejoin="round"${k === 'onechange' ? ' stroke-dasharray="6 5"' : k === 'multichange' ? ' stroke-dasharray="2 4"' : ''}
+      d="${pts.map((q, i) => (i ? 'L' : 'M') + x(q[0]).toFixed(1) + ' ' + y(q[1]).toFixed(1)).join(' ')}"/>`;
+    for (const [a, b, r] of pts.slice(1))
+      s += `<circle cx="${x(a)}" cy="${y(b)}" r="${r === 'mismatch' ? 6 : 3.5}" fill="${col}" stroke="var(--card)" stroke-width="1.5"/>`;
+  }
+  svg.innerHTML = s;
+}
+
+function compareCol(el, k, title) {
+  const run = S.runs[k];
+  const head = v => `<header><div><p class="eyebrow">${title}</p><h3>${NAMES[k]}</h3></div>${v ? `<span class="v-${v.cls}">${v.word}</span>` : ''}</header>`;
+  if (!run) { el.innerHTML = head() + `<p class="quiet">Do the “${NAMES[k]}” step to fill this column.</p>`; return; }
+  const seen = new Set();
+  const rows = run.events.filter(e => e.result !== 'repeat' && !seen.has(e.site) && seen.add(e.site));
+  const cell = (label, now, was, changed) => `<dt>${label}</dt><dd>${changed && was != null ? `<s>${esc(was)}</s>` : ''}<span class="${changed ? 'chg' : ''}">${esc(now)}</span></dd>`;
+  el.innerHTML = head(verdictOf(run)) + rows.map(e => {
+    const b = e.baseline, c = e.checks || {};
+    return `<div class="crow" data-testid="compare-row" data-site="${esc(e.site)}" data-mismatch="${e.result === 'mismatch'}">
+      <div class="head"><span>${esc(e.site)}</span>${chips(c)}</div>
+      <dl>${cell('JA4S', e.ja4s, b?.ja4s?.[0], c.A)}${cell('Key', short(e.key), b && short(b.keys?.[0]), c.B)}${cell('TTL', e.ttl, b?.ttl, c.D)}</dl></div>`;
+  }).join('');
+}
+
+function render() {
+  for (const b of document.querySelectorAll('[data-step]')) b.classList.toggle('done', S.done.has(b.dataset.step));
+  const next = ORDER.find(k => !S.done.has(k));
+  for (const b of document.querySelectorAll('[data-step]')) b.classList.toggle('next', b.dataset.step === next);
+  $('[data-testid=baseline-count]').textContent = S.baseline;
+  for (const el of document.querySelectorAll('.log-count')) el.textContent = S.log;
+
+  for (const t of document.querySelectorAll('.tabs [data-page]')) t.setAttribute('aria-selected', t.dataset.page === S.page);
+  for (const pg of document.querySelectorAll('main .page')) pg.hidden = pg.dataset.page !== S.page;
+
+  const latest = S.runs[S.latest];
+  const v = latest ? verdictOf(latest) : { cls: 'pending', word: 'Pending', detail: S.baseline ? 'Baseline learned. Run a scenario.' : 'Learn a baseline, then run a scenario.' };
+  $('#verdict').className = `card verdict ${v.cls}`;
+  $('[data-testid=verdict]').textContent = v.word;
+  $('[data-testid=verdict-detail]').textContent = v.detail;
+  $('#verdict-ste').textContent = VERDICT_STE[v.cls];
+
+  $('#baseline').innerHTML = S.sites.length ? S.sites.map(s =>
+    `<tr><td>${esc(s.site)}</td><td class="mono">${esc(s.ja4s.join(', '))}</td><td class="mono">${esc(s.keys.join(', '))}</td><td class="num">${esc(s.ttl)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="quiet">Do the Learn step to record the baseline.</td></tr>';
+
+  drawChart();
+  $('#runs').innerHTML = RUNS.filter(k => S.runs[k]).map(k => {
+    const r = verdictOf(S.runs[k]);
+    return `<div data-testid="run-${k}"><span class="swatch s-${k}"></span> <span>${NAMES[k]}</span> <span class="v-${r.cls}">${r.word}</span> <span class="quiet">${r.detail.replace(/^\w+ /, '')}</span></div>`;
+  }).join('');
+
+  compareCol($('[data-testid=compare-before]'), 'normal', 'Before');
+  compareCol($('[data-testid=compare-after]'), 'attack', 'After · Interceptor');
+
+  $('#ev-lead').textContent = latest
+    ? `${NAMES[S.latest]} · client ${latest.events[0]?.client ?? '—'}. Each row is one site. After each decision, a new test starts at 0.`
+    : 'Each row is one site. After each decision, a new test starts at 0.';
+  $('#events').innerHTML = latest ? latest.events.map((e, i) => {
+    const decided = e.decision !== 'pending';
+    return `<tr data-testid="event-row" data-result="${esc(e.result)}" data-score="${Number(e.score).toFixed(2)}">
+      <td class="quiet">${e.i}</td><td>${esc(e.site)}</td><td class="r-${esc(e.result)}">${esc(e.result)}</td><td>${chips(e.checks)}</td>
+      <td class="num">${num(e.delta)}</td><td class="num">${num(e.score)}</td>
+      <td>${decided ? `<span class="v-${esc(e.decision)}">${e.decision === 'alert' ? 'Alert' : 'Clear'}</span>${i < latest.events.length - 1 ? '<span class="new-test">new test starts</span>' : ''}` : '<span class="quiet">—</span>'}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="quiet">Do the Normal, One change, Many changes or Attack step.</td></tr>';
+
+  $('#tamper-result').textContent = S.tamper ? 'Log edited' : 'Not tampered';
+  const vr = S.verify;
+  $('#verify-result').textContent = !vr ? 'Not verified' : vr.ok ? `Chain intact · ${vr.records} records` : `Broken at record ${vr.bad_record}`;
+  $('#verify-result').className = vr ? (vr.ok ? 'v-clear' : 'v-alert') : '';
+
+  const p = S.params;
+  $('#model').innerHTML = p ? [
+    ['θ₀ · match, no interceptor', p.theta0, 'How often a site matches when no interceptor is present.'],
+    ['θ₁ · match, interceptor', p.theta1, 'How often a site matches when an interceptor is present.'],
+    ['α · false alert rate', p.alpha, 'The maximum rate of false alerts that we accept.'],
+    ['β · detection rate', p.beta, 'The minimum rate of detection that we accept.'],
+    ['Step on change', num(p.mismatch_step), `A mismatch is ${((1 - p.theta1) / (1 - p.theta0)).toFixed(1)} times more probable with an interceptor.`],
+    ['Step on match', num(p.match_step), `A match is ${(p.theta0 / p.theta1).toFixed(1)} times more probable without an interceptor.`],
+    ['Alert threshold', num(p.upper), 'At this score the sensor sends an alert.'],
+    ['Clear threshold', num(p.lower), 'At this score the sensor clears the client.'],
+  ].map(([k, v, ste]) => `<div><dt>${k}</dt><dd>${esc(v)}<p class="ste">${ste}</p></dd></div>`).join('') : '';
+}
+
+async function loadState() {
+  const st = await api('/api/state', 'GET');
+  Object.assign(S, { baseline: st.baseline_sites, log: st.log_records, params: st.params });
+}
+
+async function step(k) {
+  if (k === 'reset') { await api('/api/reset'); S = fresh(); }
+  else if (k === 'learn') S.sites = (await api('/api/learn')).sites;
+  else if (k === 'tamper') { S.tamper = (await api('/api/tamper')).record; S.verify = null; }
+  else if (k === 'verify') S.verify = await api('/api/verify');
+  else { S.runs[k] = await api(`/api/run?scenario=${k}`); S.latest = k; }
+  if (k !== 'reset') S.done.add(k);
+  S.page = PAGE_OF[k];
+  await loadState();
+}
+
+const buttons = document.querySelectorAll('[data-step]');
+for (const b of buttons) b.addEventListener('click', async () => {
+  const err = $('[data-testid=error]');
+  for (const x of buttons) x.disabled = true;
+  try { await step(b.dataset.step); err.hidden = true; err.textContent = ''; }
+  catch (e) { err.textContent = e.message; err.hidden = false; }
+  finally { for (const x of buttons) x.disabled = false; render(); }
+});
+for (const t of document.querySelectorAll('.tabs [data-page]'))
+  t.addEventListener('click', () => { S.page = t.dataset.page; render(); });
+
+new ResizeObserver(drawChart).observe($('#chart'));
+loadState().catch(e => { const err = $('[data-testid=error]'); err.textContent = e.message; err.hidden = false; }).finally(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  sensor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools and Wireshark (tshark)
+        run: |
+          sudo add-apt-repository -y ppa:wireshark-dev/stable
+          sudo apt-get update
+          echo "wireshark-common wireshark-common/install-setuid boolean false" | sudo debconf-set-selections
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ libssl-dev libpcap-dev libsodium-dev libgtest-dev tshark
+          tshark --version | head -1
+      - name: Build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+      - name: Unit tests
+        run: cd build && ctest --output-on-failure
+      - name: Wireshark agrees with the sensor (JA4, SNI, TTL, certificate issuer vs verdict)
+        run: sh tests/wireshark_check.sh
+      - name: Calibration E2E
+        run: sh tests/calibrate_e2e.sh
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Web engine decides exactly like the C++ sensor
+        run: node site/test/parity.mjs
+      - name: Runtime under 4 ms (tuned method, attack capture)
+        run: ./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/attack.pcap -c zerohour.tuned.conf
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: evidence, path: e2e/artifacts/ }

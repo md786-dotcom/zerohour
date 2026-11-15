@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zerohour Console</title>
+<meta name="description" content="zerohour finds a TLS interceptor on a client's path from the handshake alone, without decrypting traffic.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cpath d='M9 10h14L9 22h14' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 10h14L9 22h14" stroke="var(--tile)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>zerohour</a>
+    <nav aria-label="Sections">
+      <a href="/" aria-current="page">Console</a>
+      <a href="#lab">Lab replay</a>
+      <a href="#evidence">Packet evidence</a>
+      <a href="/compare" target="_blank" rel="noopener" data-testid="open-compare">Before vs after ↗</a>
+    </nav>
+    <span class="spacer"></span>
+    <span class="live" id="live" role="status"><i aria-hidden="true"></i><span id="live-text">Connecting…</span></span>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">TLS interception sensor</p>
+    <h1>Finds the interceptor. Never reads the traffic.</h1>
+    <p class="lede">zerohour fingerprints only the TLS handshake and decides for each client with a sequential hypothesis test, the Threshold Random Walk of Jung et al.</p>
+    <div class="actions">
+      <div class="seg" role="group" aria-label="Detection method" id="method">
+        <button aria-pressed="true" data-method="tuned">Tuned method</button>
+        <button aria-pressed="false" data-method="plan">Plan method</button>
+      </div>
+      <a class="link-more" href="/compare" target="_blank" rel="noopener">See both constraints, before vs after</a>
+    </div>
+  </section>
+
+  <section class="grid kpis" aria-label="Key figures">
+    <div class="tile kpi"><div class="label">Handshakes per minute</div><div class="value" id="k-rate">—</div><div class="sub" id="k-rate-sub">&nbsp;</div></div>
+    <div class="tile kpi"><div class="label">Clients monitored</div><div class="value" id="k-clients">—</div><div class="sub" id="k-clients-sub">&nbsp;</div></div>
+    <div class="tile kpi"><div class="label">Alerts, last 10 minutes</div><div class="value" id="k-alerts" data-testid="k-alerts">—</div><div class="sub" id="k-alerts-sub">&nbsp;</div></div>
+    <div class="tile kpi"><div class="label">Decision time per handshake, p99</div><div class="value" id="k-lat" data-testid="k-lat">—</div><div class="sub" id="k-lat-sub">&nbsp;</div><div class="budget" aria-hidden="true"><span id="k-lat-bar" style="width:0"></span></div></div>
+  </section>
+  <p class="note" style="margin-top:16px">
+    <b>Simulated network, real engine.</b> The handshakes come from a simulated campus network of 32 clients and 32 servers, generated on the server from the clock.
+    Every verdict is computed by the zerohour engine in a Vercel function. That engine is parity-tested against the C++ sensor on the lab captures.
+    Every four minutes one client is put behind a TLS interceptor for 90 seconds. <span id="next-attack"></span>
+  </p>
+
+  <section class="block grid two">
+    <div class="tile">
+      <header><h3>Clients</h3><p id="clients-sub">Score of the running test. The walk stops at ±4.60.</p></header>
+      <div class="tw" tabindex="0" role="region" aria-label="Clients">
+        <table><thead><tr><th>Client</th><th>Browser</th><th>Score</th><th class="num">Sites</th><th>Last verdict</th></tr></thead>
+        <tbody id="clients"></tbody></table>
+      </div>
+    </div>
+    <div class="tile">
+      <header><h3>Alerts</h3><p>Checked against the simulation's ground truth</p></header>
+      <ul class="alerts" id="alerts" aria-live="polite"></ul>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="tile">
+      <header><h3>Live handshakes</h3><p>Newest first. A, B and D are the three checks: server fingerprint, certificate key, network path.</p></header>
+      <div class="tw tall" tabindex="0" role="region" aria-label="Live handshakes">
+        <table><thead><tr><th>Time</th><th>Client</th><th>Server name</th><th>TLS</th><th>JA4S</th><th>Checks</th><th class="num">Step</th><th class="num">Score</th><th>Verdict</th></tr></thead>
+        <tbody id="events"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="tile">
+      <header><h3>Evidence log</h3><p id="log-sub">Each record carries the hash of the one before it.</p></header>
+      <div class="tw" tabindex="0" role="region" aria-label="Evidence log">
+        <table><thead><tr><th class="num">#</th><th>Record</th><th>Previous hash</th><th>Hash</th></tr></thead><tbody id="log"></tbody></table>
+      </div>
+      <div class="actions" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px">
+        <button class="btn" id="verify" data-testid="verify">Verify chain on the server</button>
+        <button class="btn ghost" id="tamper" data-testid="tamper">Edit one record, then verify</button>
+        <span id="verify-result" data-testid="verify-result" class="t2" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="lab">
+    <h2 class="title">Lab replay</h2>
+    <p class="sub">Real TLS 1.2 handshakes recorded by the lab, parsed by the C++ sensor and judged here by both methods. The baseline is learned from 8 sites on a clean network.</p>
+    <div class="seg" role="tablist" aria-label="Lab scenario" id="scenarios">
+      <button role="tab" aria-selected="false" data-s="normal">Normal</button>
+      <button role="tab" aria-selected="false" data-s="onechange">One change</button>
+      <button role="tab" aria-selected="false" data-s="multichange">Many changes</button>
+      <button role="tab" aria-selected="true" data-s="attack">Attack</button>
+    </div>
+    <div class="grid halves" style="margin-top:20px">
+      <div class="tile">
+        <header><h3 id="lab-title">Score walk</h3><p id="lab-verdict"></p></header>
+        <svg class="chart" id="lab-chart" role="img" aria-label="Score walk of both methods"></svg>
+        <div class="legend"><span><i style="border-color:var(--plan);border-top-style:dashed"></i>Plan method (before)</span><span><i style="border-color:var(--tuned)"></i>Tuned method (after)</span></div>
+      </div>
+      <div class="tile">
+        <header><h3>Per site</h3><p id="lab-desc"></p></header>
+        <div class="tw" tabindex="0" role="region" aria-label="Lab events">
+          <table><thead><tr><th>Site</th><th>Checks</th><th class="num">Plan</th><th class="num">Tuned</th></tr></thead><tbody id="lab-rows"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="evidence">
+    <h2 class="title">Packet evidence</h2>
+    <p class="sub" id="ev-sub">The same lab captures, dissected by Wireshark. Download a capture and open it in Wireshark with the display filter <code>tls.handshake.type == 11</code> to see the Certificate messages.</p>
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div class="seg" role="tablist" aria-label="Capture" id="captures">
+        <button role="tab" aria-selected="false" data-c="learn">learn.pcap</button>
+        <button role="tab" aria-selected="false" data-c="multichange">multichange.pcap</button>
+        <button role="tab" aria-selected="true" data-c="attack">attack.pcap</button>
+      </div>
+      <a class="link-more" id="ev-download" href="/pcaps/attack.pcap" download>Download attack.pcap</a>
+    </div>
+    <div class="grid halves" style="margin-top:20px">
+      <div class="tile">
+        <header><h3>Packet list</h3><p>Display filter: tls.handshake</p></header>
+        <div class="tw tall" tabindex="0" role="region" aria-label="Packet list">
+          <table class="pkt"><thead><tr><th class="num">No.</th><th>Source</th><th>Destination</th><th class="num">TTL</th><th>Info</th><th>Certificate</th></tr></thead><tbody id="pkts"></tbody></table>
+        </div>
+      </div>
+      <div class="tile">
+        <header><h3 id="tree-title">Packet details</h3><p>tshark -V -O tls</p></header>
+        <pre class="tree" id="tree" tabindex="0"></pre>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    zerohour, Zero Hour Track 2 prototype. The sensor (C++17, libpcap, OpenSSL, libsodium) reads only TLS handshakes and never decrypts.
+    The console's traffic is simulated. The lab replay and packet evidence come from real handshakes recorded by the lab.
+  </footer>
+</main>
+<script type="module" src="/assets/console.js"></script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zerohour Before and After</title>
+<meta name="description" content="The two constraints on the zerohour sensor: detection under 4 ms, and fewer false alerts. Before and after.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cpath d='M9 10h14L9 22h14' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 10h14L9 22h14" stroke="var(--tile)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>zerohour</a>
+    <nav aria-label="Sections">
+      <a href="/">Console</a>
+      <a href="/compare" aria-current="page">Before vs after</a>
+      <a href="#runtime">Runtime</a>
+      <a href="#false-alerts">False alerts</a>
+      <a href="#math">The change</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Two constraints</p>
+    <h1>Faster than 4 ms. Far fewer false alerts.</h1>
+    <p class="lede">Before is the plan as submitted: one ±step per site, and a log reopened for every record. After is the tuned sensor: each check weighted by its own evidence, each site capped, and the log kept open.</p>
+  </section>
+
+  <section class="block" id="runtime">
+    <h2 class="title">Detection runtime under 4 ms.</h2>
+    <p class="sub">Measured in the C++ sensor on <span id="machine">—</span>: 2,000 runs over the 8 handshakes of the attack capture, where every site writes a log record. Each run includes parsing, fingerprints, checks, the score step and the hash-chained log write.</p>
+    <div class="grid halves">
+      <div class="tile">
+        <div class="stat-pair">
+          <div><div class="big-num" id="rt-before">—</div><div class="cap">worst case before</div></div>
+          <div><div class="big-num delta-good" id="rt-after" style="color:var(--tuned)">—</div><div class="cap">worst case after</div></div>
+        </div>
+        <p class="note" style="margin-top:16px" id="rt-note"></p>
+      </div>
+      <div class="tile">
+        <header><h3>Time per handshake</h3><p>0 to 4 ms; the red line is the budget</p></header>
+        <div class="bars" id="rt-bars"></div>
+        <div class="legend"><span><i style="border-color:var(--plan)"></i>Before</span><span><i style="border-color:var(--tuned)"></i>After</span></div>
+      </div>
+    </div>
+    <div class="tile" style="margin-top:20px">
+      <header><h3>Where the time went</h3><p>p50 · p99 · max per handshake, microseconds</p></header>
+      <div class="tw" tabindex="0" role="region" aria-label="Runtime table">
+        <table><thead><tr><th>Capture</th><th>Version</th><th class="num">Parse + fingerprint p99</th><th class="num">Decide p50</th><th class="num">Decide p99</th><th class="num">Decide max</th><th class="num">Worst case total</th></tr></thead><tbody id="rt-table"></tbody></table>
+      </div>
+      <p class="note" style="margin-top:12px"><b>What changed:</b> the hash-chained log used to open and close its file for every record, which cost up to 2.2 ms on an alert. It now stays open and still flushes every record, so a crash loses nothing that was written before. Live in this deployment: the JavaScript port of the engine decides in <b id="rt-live">—</b> at p99 inside a Vercel function.</p>
+    </div>
+  </section>
+
+  <section class="block" id="false-alerts">
+    <h2 class="title">Fewer false alerts.</h2>
+    <p class="sub">Monte Carlo of whole tests, both methods on the same random sites. A false alert is a test without an interceptor that ends in an alert. Thresholds stay at ±4.60 (α = 0.01, β = 0.99) for both.</p>
+    <div class="grid halves">
+      <div class="tile">
+        <div class="stat-pair">
+          <div><div class="big-num" id="fp-before">—</div><div class="cap" id="fp-before-cap">false alerts before</div></div>
+          <div><div class="big-num" id="fp-after" style="color:var(--tuned)">—</div><div class="cap" id="fp-after-cap">false alerts after</div></div>
+        </div>
+        <p class="note" style="margin-top:16px" id="fp-note"></p>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px">
+          <button class="btn" id="rerun" data-testid="rerun">Run again with a new seed</button>
+          <span class="muted" id="sim-meta" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="tile">
+        <header><h3>Alert rate per test</h3><p>Log scale, 0.001% to 100%</p></header>
+        <div class="bars" id="fp-bars"></div>
+        <div class="legend"><span><i style="border-color:var(--plan)"></i>Before</span><span><i style="border-color:var(--tuned)"></i>After</span></div>
+      </div>
+    </div>
+    <div class="tile" style="margin-top:20px">
+      <header><h3>All cases</h3><p>Alert rate with 95% interval, and sites until a decision</p></header>
+      <div class="tw" tabindex="0" role="region" aria-label="Simulation results">
+        <table><thead><tr><th>Case</th><th>Traffic</th><th class="num">Before: alerts</th><th class="num">After: alerts</th><th class="num">Before: sites</th><th class="num">After: sites</th></tr></thead><tbody id="fp-table"></tbody></table>
+      </div>
+      <p class="note" style="margin-top:12px" id="fp-model"></p>
+    </div>
+  </section>
+
+  <section class="block" id="math">
+    <h2 class="title">What changed in the math.</h2>
+    <p class="sub">The paper's walk adds one fixed step per site. The tuned walk asks each check separately how much more likely its result is with an interceptor, adds those log-likelihood ratios, and caps the sum for each site.</p>
+    <div class="grid halves">
+      <div class="tile"><header><h3>Before</h3><p>Jung et al. 2004, one Bernoulli trial per site</p></header>
+        <pre class="formula mono">any check failed:  step = ln((1−θ₁)/(1−θ₀)) = ln(0.8/0.1) = +2.08
+otherwise:         step = ln(θ₁/θ₀)        = ln(0.2/0.9) = −1.50</pre>
+        <p class="note" style="margin-top:12px">A renewed certificate counts as much as a forged one. Three normal changes in a row raise an alert.</p></div>
+      <div class="tile"><header><h3>After</h3><p>Weighted per check, capped per site</p></header>
+        <pre class="formula mono">step = clip( Σ over checks k of
+         failed: ln(p₁ₖ/p₀ₖ)   held: ln((1−p₁ₖ)/(1−p₀ₖ)) ,
+       ±4.60/2.5 = ±1.84 )
+A: p₀ 0.06 p₁ 0.95   B: p₀ 0.04 p₁ 0.98   D: p₀ 0.06 p₁ 0.90</pre>
+        <p class="note" style="margin-top:12px">A benign change usually fails one check while the others still hold, so the site's sum goes down. The cap means at least 3 sites are needed for any decision, so one odd site can never alert alone.</p></div>
+    </div>
+    <div class="tile" style="margin-top:20px">
+      <header><h3>One site, both methods</h3><p>The step each method adds for typical events</p></header>
+      <div class="tw" tabindex="0" role="region" aria-label="Per site steps">
+        <table><thead><tr><th>Event on one site</th><th>Checks</th><th class="num">Before</th><th class="num">After</th></tr></thead><tbody id="cases"></tbody></table>
+      </div>
+    </div>
+    <div class="grid halves" style="margin-top:20px">
+      <div class="tile"><header><h3>Lab: many changes</h3><p id="w-multi"></p></header><svg class="chart" id="c-multi" role="img" aria-label="Score walk, many changes"></svg>
+        <div class="legend"><span><i style="border-color:var(--plan);border-top-style:dashed"></i>Before</span><span><i style="border-color:var(--tuned)"></i>After</span></div></div>
+      <div class="tile"><header><h3>Lab: attack</h3><p id="w-attack"></p></header><svg class="chart" id="c-attack" role="img" aria-label="Score walk, attack"></svg>
+        <div class="legend"><span><i style="border-color:var(--plan);border-top-style:dashed"></i>Before</span><span><i style="border-color:var(--tuned)"></i>After</span></div></div>
+    </div>
+  </section>
+
+  <footer>
+    Runtime numbers are measured by <code>zerohour bench</code> in the C++ sensor and committed as bench/before.jsonl and bench/after.jsonl.
+    The false-alert numbers are computed live by <code>/api/simulate</code> from the stated change rates. Measure your own rates with <code>zerohour calibrate</code> on real captures and the numbers will move.
+    Lab walks come from real handshakes in lab/pcaps, parsed by the C++ sensor.
+  </footer>
+</main>
+<script type="module" src="/assets/compare.js"></script>
+</body>
+</html>

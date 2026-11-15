@@ -1,0 +1,11 @@
+{
+  "name": "zerohour-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report artifacts/report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}
