@@ -54,7 +54,7 @@
         <ol class="run">
           <li>The function starts a new VM from a snapshot. This takes 1 to 3 seconds.</li>
           <li>The VM makes the client network and finds one IPv4 address for each site.</li>
-          <li>tcpdump starts. The client visits each site one time.</li>
+          <li><b>tcpdump</b> starts. It is a program that records network packets and saves them in a file (a PCAP). Then the client visits each site one time.</li>
           <li>After each visit, <b>zerohour show</b> reads the PCAP and gives JA4S, certificate key and TTL.</li>
           <li>These handshakes are the <b>baseline</b>. You can download learn.pcap.</li>
         </ol></div>
@@ -79,7 +79,7 @@
         <tr><td><b>Ubuntu</b> and Linux kernel</td><td class="mono">26.04.1, 6.18</td><td>VM</td><td class="wrap">The VM. Root access lets us use network namespaces and raw packet capture.</td></tr>
         <tr><td><b>iproute2</b> (ip netns, veth, ip rule)</td><td class="mono">Ubuntu package</td><td>VM</td><td class="wrap">Makes the client network, the gateway and the 3 extra routers for a route change.</td></tr>
         <tr><td><b>iptables</b> (nat)</td><td class="mono">1.8.11</td><td>VM gateway</td><td class="wrap">NAT to the internet. REDIRECT sends port 443 of a site to mitmproxy.</td></tr>
-        <tr><td><b>tcpdump</b> (libpcap)</td><td class="mono">Ubuntu package</td><td>VM client</td><td class="wrap">Records the client's links to a PCAP file (<span class="mono">-i any -y LINUX_SLL --immediate-mode</span>).</td></tr>
+        <tr><td><b>tcpdump</b> (libpcap)</td><td class="mono">Ubuntu package</td><td>VM client</td><td class="wrap">A program that records network packets. It saves them in a PCAP file that Wireshark can open. Options: <span class="mono">-i any -y LINUX_SLL --immediate-mode</span>.</td></tr>
         <tr><td><b>curl</b></td><td class="mono">Ubuntu package</td><td>VM client</td><td class="wrap">One HTTPS request for each site. <span class="mono">--tls-max 1.2</span> makes the "new TLS settings" change.</td></tr>
         <tr><td><b>mitmproxy</b> (mitmdump, transparent mode)</td><td class="mono">12.3.1</td><td>VM gateway</td><td class="wrap">The interceptor. It ends the client's TLS with its own certificate and opens a new TLS link to the site.</td></tr>
         <tr><td><b>zerohour sensor</b> (C++17: OpenSSL 3, libpcap, libsodium)</td><td class="mono">f857a6a</td><td>VM</td><td class="wrap">Built from our repo in the snapshot. <span class="mono">zerohour show --json</span> reads each handshake from the PCAP.</td></tr>
