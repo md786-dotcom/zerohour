@@ -9,6 +9,7 @@
     "test": "cd .. && node site/test/parity.mjs"
   },
   "dependencies": {
+    "@vercel/sandbox": "3.9.1",
     "blakejs": "1.2.1"
   }
 }

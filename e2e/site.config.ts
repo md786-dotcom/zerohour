@@ -9,5 +9,7 @@ export default defineConfig({
   timeout: 90_000,
   outputDir: 'artifacts/site-results',
   reporter: [['list'], ['html', { outputFolder: 'artifacts/site-report', open: 'never' }]],
-  use: { baseURL: process.env.SITE_URL || 'https://zerohour-pi.vercel.app', viewport: { width: 1440, height: 900 }, trace: 'on' },
+  use: { baseURL: process.env.SITE_URL || 'https://zerohour-pi.vercel.app', viewport: { width: 1440, height: 900 }, trace: 'on',
+    // A protected preview URL: pass the local dev OIDC token (vercel env pull) as the Trusted Sources header.
+    extraHTTPHeaders: process.env.VERCEL_OIDC_TOKEN ? { 'x-vercel-trusted-oidc-idp-token': process.env.VERCEL_OIDC_TOKEN } : undefined },
 });

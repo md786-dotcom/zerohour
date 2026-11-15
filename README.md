@@ -69,6 +69,13 @@ live replay reads `lab/pcaps/busy.pcap` (real lab handshakes, 8 clients, 2 inter
 simulation is `site/lib/sim.js` and the tuning sweep `site/lib/tune.js`.
 Regenerate fixtures with `sh site/scripts/fixtures.sh`; deploy with `cd site && vercel deploy --prod`.
 
+**Live capture** (`/#capture`, `site/api/capture.js`): the user types 3 to 8 public hosts or IPv4 addresses. A Vercel Sandbox VM
+starts from a snapshot (tcpdump, mitmproxy, this sensor built on Linux) and runs `site/lib/capture.sh`. A client in its own
+network namespace visits each host two times, and tcpdump records the client's side of the link. The second visit goes
+direct or through `mitmdump --mode transparent` on the client's gateway. `zerohour show` parses both PCAPs and the
+engine decides (baseline from the first visit). Both PCAPs can be downloaded. Private, loopback and link-local addresses are refused.
+Rebuild the snapshot after a sensor change: `cd site && node --env-file=../.env.local scripts/snapshot.mjs <pushed commit>`.
+
 ## Tests
 
 ```sh

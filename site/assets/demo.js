@@ -1,7 +1,7 @@
 import { $, esc, sgn, api, chips, hoverTip, walkChart } from './ui.js';
 
 // ---------------------------------------------------------------- tabs (one screen each, no page scroll)
-const TABS = ['live', 'lab', 'wireshark', 'log'];
+const TABS = ['live', 'capture', 'lab', 'wireshark', 'log'];
 function show(tab) {
   if (!TABS.includes(tab)) tab = 'live';
   for (const b of $('#tabs').children) b.setAttribute('aria-selected', b.dataset.tab === tab);
@@ -174,6 +174,7 @@ const walk = ev => {
   }
   return pts;
 };
+const cell = x => `<span class="mono">${sgn(x.delta)}</span> <span class="mono muted">→ ${sgn(x.score)}</span>${x.decision !== 'pending' ? ` <span class="pill ${x.decision}">${x.decision === 'alert' ? 'Alert' : 'Clear'}</span>` : ''}`;
 const first = r => (r.decisions[0] ? `${r.decisions[0].decision === 'alert' ? 'Alert' : 'Clear'} after ${r.decisions[0].sites} sites` : 'No decision');
 async function lab(s) {
   labDone = true;
@@ -184,12 +185,53 @@ async function lab(s) {
   $('#lab-verdict').textContent = `Plan: ${first(plan)} · Tuned: ${first(tuned)}`;
   walkChart($('#lab-chart'), [{ name: 'Plan method', color: 'var(--plan)', dash: '6 5', pts: walk(plan.events) },
     { name: 'Tuned method', color: 'var(--tuned)', pts: walk(tuned.events) }], tuned.params);
-  const cell = x => `<span class="mono">${sgn(x.delta)}</span> <span class="mono muted">→ ${sgn(x.score)}</span>${x.decision !== 'pending' ? ` <span class="pill ${x.decision}">${x.decision === 'alert' ? 'Alert' : 'Clear'}</span>` : ''}`;
   $('#lab-rows').innerHTML = tuned.events.map((e, i) => `<tr><td>${esc(e.site)}</td>
     <td>${chips({ A: e.checks.a, B: e.checks.b_seen ? e.checks.b : null, D: e.checks.d })}</td><td class="num-c">${cell(plan.events[i])}</td><td class="num-c">${cell(e)}</td></tr>`).join('');
 }
 for (const b of $('#scenarios').children) b.addEventListener('click', () => lab(b.dataset.s));
 hoverTip($('#lab-chart'));
+
+// ---------------------------------------------------------------- live capture of the user's sites (/api/capture)
+let capPath = 'direct';
+for (const b of $('#cap-path').children) b.addEventListener('click', () => {
+  capPath = b.dataset.path;
+  press('#cap-path', 'path', capPath);
+  $('#cap-sub').textContent = capPath === 'mitm' ? 'The second visit goes through mitmproxy on the client’s gateway.' : 'The second visit uses the direct path.';
+});
+const pcapUrl = b64 => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'application/vnd.tcpdump.pcap' }));
+const verdict = (r, name) => r.decisions[0] ? `${name}: ${r.decisions[0].decision === 'alert' ? 'Alert' : 'Clear'} after ${r.decisions[0].sites} sites`
+  : `${name}: no decision yet, score ${sgn(r.events.at(-1)?.score ?? 0)}`;
+$('#cap-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const sites = $('#cap-sites').value.split(/[\s,]+/).filter(Boolean), t0 = performance.now(), btn = $('#cap-run');
+  btn.disabled = true;
+  const tick = setInterval(() => ($('#cap-state').textContent = `Capturing ${sites.length} sites, ${capPath === 'mitm' ? 'second visit through mitmproxy' : 'direct'}… ${((performance.now() - t0) / 1000).toFixed(0)} s`), 250);
+  try {
+    const r = await api('/api/capture', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sites, path: capPath }) });
+    const { plan, tuned } = r, learnBy = new Map(r.learn.map(o => [o.site, o]));
+    const seen = new Set(r.test.map(o => o.site)), missing = r.hosts.filter(h => !seen.has(h));
+    $('#cap-state').textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s. ${r.test.length} handshakes in the second visit` +
+      (missing.length ? `. No handshake from: ${missing.join(', ')}` : '') + '.';
+    const alert = [plan, tuned].some(m => m.decisions[0]?.decision === 'alert');
+    $('#cap-verdict').innerHTML = `<span class="pill ${alert ? 'alert' : tuned.decisions[0] ? 'clear' : 'none'}">${verdict(plan, 'Plan')} · ${verdict(tuned, 'Tuned')}</span>`;
+    walkChart($('#cap-chart'), [{ name: 'Plan method', color: 'var(--plan)', dash: '6 5', pts: walk(plan.events) },
+      { name: 'Tuned method', color: 'var(--tuned)', pts: walk(tuned.events) }], tuned.params);
+    $('#cap-time').textContent = `Engine: ${(tuned.per_handshake_us / 1000).toFixed(3)} ms per handshake (budget 4 ms). VM start ${r.timing.boot_s.toFixed(1)} s.`;
+    $('#cap-rows').innerHTML = tuned.events.map((e, i) => {
+      const l = learnBy.get(e.site);
+      return `<tr data-site="${esc(e.site)}"><td title="TLS ${esc(e.tls)}">${esc(e.site)}</td>
+        <td class="mono${e.checks.d ? ' forged' : ''}">${l ? l.ttl : '—'} → ${e.ttl}</td>
+        <td class="mono${e.checks.a ? ' forged' : ''}" title="First visit: ${esc(l?.ja4s ?? 'none')}">${esc(e.ja4s)}</td>
+        <td>${e.checks.known ? chips({ A: e.checks.a, B: e.checks.b_seen ? e.checks.b : null, D: e.checks.d }) : '<span class="muted">not learned</span>'}</td>
+        <td class="num-c">${cell(plan.events[i])}</td><td class="num-c">${cell(e)}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="muted">No handshakes in the capture.</td></tr>';
+    $('#cap-dl-learn').href = pcapUrl(r.pcaps.learn);
+    $('#cap-dl-test').href = pcapUrl(r.pcaps.test);
+    $('#cap-dl').hidden = false;
+  } catch (e) { $('#cap-state').textContent = `Error: ${e.message}`; }
+  finally { clearInterval(tick); btn.disabled = false; }
+});
+hoverTip($('#cap-chart'));
 
 // ---------------------------------------------------------------- Wireshark (tshark dissections of the lab captures)
 let wsDone = false, evidence;

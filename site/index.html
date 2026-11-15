@@ -22,6 +22,7 @@
 <main>
   <div class="seg tabs" role="tablist" aria-label="Demo sections" id="tabs">
     <button role="tab" aria-selected="true" data-tab="live">Live replay</button>
+    <button role="tab" aria-selected="false" data-tab="capture">Live capture</button>
     <button role="tab" aria-selected="false" data-tab="lab">Lab scenarios</button>
     <button role="tab" aria-selected="false" data-tab="wireshark">Wireshark</button>
     <button role="tab" aria-selected="false" data-tab="log">Evidence log</button>
@@ -52,6 +53,30 @@
         <div class="clients scroll" id="clients"></div></div>
       <div class="card"><div class="top"><div><h2>Latest handshakes</h2><p class="sub">A, B and D are the three checks.</p></div></div>
         <ul class="feed scroll" id="feed" aria-live="polite"></ul></div>
+    </div>
+  </section>
+
+  <!-- Live capture: real handshakes to the sites the user types -->
+  <section class="panel" data-panel="capture" role="tabpanel" hidden>
+    <div class="head">
+      <div><h1>Live capture</h1><p>Type 3 to 8 websites or IPv4 addresses. A new Linux VM on Vercel connects to each site two times and records the packets with tcpdump. The sensor learns from the first visit and tests the second visit.</p></div>
+    </div>
+    <form class="controls" id="cap-form" data-testid="cap-form">
+      <label class="field grow"><span>Sites</span><input id="cap-sites" data-testid="cap-sites" value="example.com, github.com, wikipedia.org, cloudflare.com" autocomplete="off" spellcheck="false"></label>
+      <div class="seg" role="group" aria-label="Path of the second visit" id="cap-path">
+        <button type="button" aria-pressed="true" data-path="direct">Direct</button><button type="button" aria-pressed="false" data-path="mitm">Through mitmproxy</button>
+      </div>
+      <button class="btn primary" id="cap-run" data-testid="cap-run"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>Capture and test</button>
+    </form>
+    <div class="progress"><span id="cap-state" data-testid="cap-state" aria-live="polite">Push “Capture and test”. One capture takes about 10 seconds.</span></div>
+    <div class="row halves cap">
+      <div class="card"><div class="top"><div><h2>Score of the second visit</h2><p class="sub" id="cap-sub">The second visit uses the direct path.</p></div></div>
+        <div id="cap-verdict" data-testid="cap-verdict" class="muted"></div>
+        <svg class="chart" id="cap-chart" role="img" aria-label="Score of both methods"></svg>
+        <div class="legend"><span><i style="border-color:var(--plan);border-top-style:dashed"></i>Plan method (before)</span><span><i style="border-color:var(--tuned)"></i>Tuned method (after)</span><span class="muted" id="cap-time"></span></div></div>
+      <div class="card"><div class="top"><div><h2>Each site</h2><p class="sub">First visit → second visit, as the C++ sensor read them from the captures.</p></div>
+        <span class="controls" id="cap-dl" hidden><a class="btn" id="cap-dl-learn" download="learn.pcap">learn.pcap</a><a class="btn" id="cap-dl-test" download="test.pcap">test.pcap</a></span></div>
+        <div class="scroll"><table><thead><tr><th>Site</th><th>TTL</th><th>Server fingerprint (JA4S)</th><th>Checks</th><th class="num-c">Plan</th><th class="num-c">Tuned</th></tr></thead><tbody id="cap-rows" data-testid="cap-rows"></tbody></table></div></div>
     </div>
   </section>
 
