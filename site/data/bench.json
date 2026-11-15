@@ -2,74 +2,82 @@
  "machine": "Apple M2",
  "before": [
   {
-   "pcap": "lab/pcaps/normal.pcap",
-   "handshakes": 8,
-   "reps": 2000,
+   "pcap": "lab/pcaps/busy.pcap",
+   "handshakes": 64,
+   "reps": 20,
    "weighted": false,
    "parse_us": {
-    "p50": 32.56,
-    "p99": 50.82
+    "p50": 105.26,
+    "p99": 125.29
    },
    "decide_us": {
-    "p50": 0.12,
-    "p99": 83.54,
-    "max": 987.42
+    "p50": 3.88,
+    "p99": 4208.08,
+    "max": 8093.0
    },
-   "total_p99_us": 134.36,
-   "budget_us": 4000
+   "total_p99_us": 4333.37,
+   "budget_us": 4000,
+   "log_sync": 2,
+   "logged": 0.4844
   },
   {
    "pcap": "lab/pcaps/attack.pcap",
    "handshakes": 8,
-   "reps": 2000,
+   "reps": 20,
    "weighted": false,
    "parse_us": {
-    "p50": 32.43,
-    "p99": 46.03
+    "p50": 135.6,
+    "p99": 256.98
    },
    "decide_us": {
-    "p50": 24.21,
-    "p99": 211.21,
-    "max": 2241.79
+    "p50": 1838.04,
+    "p99": 4622.92,
+    "max": 5278.79
    },
-   "total_p99_us": 257.24,
-   "budget_us": 4000
+   "total_p99_us": 4879.9,
+   "budget_us": 4000,
+   "log_sync": 2,
+   "logged": 1.0
   }
  ],
  "after": [
   {
-   "pcap": "lab/pcaps/normal.pcap",
-   "handshakes": 8,
-   "reps": 2000,
+   "pcap": "lab/pcaps/busy.pcap",
+   "handshakes": 64,
+   "reps": 20,
    "weighted": true,
    "parse_us": {
-    "p50": 32.46,
-    "p99": 57.8
+    "p50": 63.32,
+    "p99": 86.03
    },
    "decide_us": {
-    "p50": 0.12,
-    "p99": 52.75,
-    "max": 636.04
+    "p50": 397.17,
+    "p99": 3135.21,
+    "max": 4877.42
    },
-   "total_p99_us": 110.55,
-   "budget_us": 4000
+   "total_p99_us": 3221.24,
+   "budget_us": 4000,
+   "log_sync": 1,
+   "logged": 0.5625
   },
   {
    "pcap": "lab/pcaps/attack.pcap",
    "handshakes": 8,
-   "reps": 2000,
+   "reps": 20,
    "weighted": true,
    "parse_us": {
-    "p50": 32.68,
-    "p99": 65.27
+    "p50": 111.27,
+    "p99": 153.1
    },
    "decide_us": {
-    "p50": 3.0,
-    "p99": 85.46,
-    "max": 1051.46
+    "p50": 557.79,
+    "p99": 4419.92,
+    "max": 4473.71
    },
-   "total_p99_us": 150.72,
-   "budget_us": 4000
+   "total_p99_us": 4573.02,
+   "budget_us": 4000,
+   "log_sync": 1,
+   "logged": 1.0
   }
  ]
 }

@@ -1,6 +1,8 @@
 #include "chainlog.h"
 
+#include <fcntl.h>
 #include <sodium.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -19,20 +21,35 @@ static std::string hash_hex(const std::string& prev, size_t seq, const std::stri
     return hex;
 }
 
-ChainLog::ChainLog(std::string path) : path_(std::move(path)), last_hash_(kZeroHash) {
+// Durability of one record. macOS: F_FULLFSYNC flushes the drive cache (~3 ms), F_BARRIERFSYNC only orders writes
+// (~0.5 ms). Linux has no ordered-only barrier: full = fdatasync, ordered notices stay in the page cache.
+static void sync_fd(int fd, bool full) {
+#ifdef __APPLE__
+    if (fcntl(fd, full ? F_FULLFSYNC : F_BARRIERFSYNC) == -1) fsync(fd);  // fs without F_*FSYNC support
+#else
+    if (full) fdatasync(fd);
+#endif
+}
+
+ChainLog::ChainLog(std::string path, int sync) : path_(std::move(path)), last_hash_(kZeroHash), sync_(sync) {
     // Continue from the last line as-is; a corrupt log stays corrupt and verify_log reports it.
     std::ifstream f(path_);
     for (std::string line; std::getline(f, line); ++seq_) last_hash_ = line.substr(line.rfind('\t') + 1);
-    out_.open(path_, std::ios::app);
+    fd_ = open(path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
 }
 
-void ChainLog::append(const std::string& payload) {
+ChainLog::~ChainLog() { if (fd_ >= 0) close(fd_); }
+
+void ChainLog::append(const std::string& payload, bool alert) {
     std::string p = payload;
     std::replace(p.begin(), p.end(), '\t', ' ');
     std::replace(p.begin(), p.end(), '\n', ' ');
     std::string h = hash_hex(last_hash_, seq_ + 1, p);
-    out_ << seq_ + 1 << '\t' << last_hash_ << '\t' << p << '\t' << h << '\n' << std::flush;
-    if (!out_) throw std::runtime_error("chainlog: cannot write " + path_);  // never drop an alert silently
+    const std::string line = std::to_string(seq_ + 1) + '\t' + last_hash_ + '\t' + p + '\t' + h + '\n';
+    if (fd_ < 0 || write(fd_, line.data(), line.size()) != ssize_t(line.size()))
+        throw std::runtime_error("chainlog: cannot write " + path_);  // never drop an alert silently
+    if (sync_ == 2 || (sync_ == 1 && alert)) sync_fd(fd_, true);
+    else if (sync_ == 1) sync_fd(fd_, false);
     ++seq_;
     last_hash_ = h;
 }

@@ -1,9 +1,8 @@
 #!/bin/sh
 # Lab PKI for zh_lab: Lab CA + site1..8.lab, a renewed site3 key, and the Interceptor CA with forged certs.
-# Idempotent: keys must stay stable across runs so a learned baseline stays valid.
+# Idempotent: only missing files are made, so keys stay stable and a learned baseline stays valid.
 set -e
 out=$1
-[ -f "$out/done" ] && exit 0
 OSSL=/opt/homebrew/opt/openssl@3/bin/openssl  # macOS /usr/bin/openssl is LibreSSL
 mkdir -p "$out"
 cd "$out"
@@ -18,11 +17,10 @@ leaf() {  # file host ca-file   (new key every time)
     -addext "subjectAltName=DNS:$2" -addext "basicConstraints=critical,CA:FALSE" 2>/dev/null
 }
 
-ca lab-ca "Lab CA"
-ca int-ca "Interceptor CA"
+[ -f lab-ca.crt ] || ca lab-ca "Lab CA"
+[ -f int-ca.crt ] || ca int-ca "Interceptor CA"
 for n in 1 2 3 4 5 6 7 8; do
-  leaf "site$n" "site$n.lab" lab-ca
-  leaf "int-site$n" "site$n.lab" int-ca
+  [ -f "site$n.crt" ] || leaf "site$n" "site$n.lab" lab-ca
+  [ -f "int-site$n.crt" ] || leaf "int-site$n" "site$n.lab" int-ca
+  [ -f "site$n-renewed.crt" ] || leaf "site$n-renewed" "site$n.lab" lab-ca  # busy.pcap renews any site
 done
-leaf site3-renewed site3.lab lab-ca
-touch done

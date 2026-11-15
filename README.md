@@ -44,23 +44,29 @@ demo3/demo3.sh                                   # 3 benign changes: calibrate i
 
 | | Before (`zerohour.conf`, plan) | After (`zerohour.tuned.conf`) |
 |---|---|---|
-| Step per site | one Bernoulli trial: any check failed `+2.08`, else `−1.50` | sum of per-check LLRs (A, B, D each with its own p0/p1), capped at `±4.60/2.5` |
-| False alerts, simulated normal traffic | 1.1% of tests | ~0 (none in 100k) |
-| Worst case per handshake (attack capture) | 2.29 ms | 1.12 ms (log file kept open) |
+| Step per site | any check failed `+2.08`, else `−1.50` | sum of per-check LLRs (rates from calibration), capped at `±4.60/2.5` |
+| Evidence log | every record fully flushed (`F_FULLFSYNC` / `fdatasync`) | records ordered (`F_BARRIERFSYNC`), alerts fully flushed |
+| p99 per handshake, `busy.pcap` (8 clients, 64 handshakes) | 4.33 ms (over 4 ms) | 3.22 ms |
+| p99 per handshake, `attack.pcap` (every site an alert or notice) | 4.88 ms | 4.57 ms (still over: each alert waits for a full flush) |
+| False alerts, simulated (85% TLS 1.3, 25% of sites bypass the interceptor) | 7.8% of tests | 0.16% |
+| Detection, simulated | 99.5%, 4.3 sites | 98.4%, 6.5 sites |
+| False alerts, real `busy.pcap` (6 clean clients) | 0 | 0 |
 
 ```sh
-./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/attack.pcap -c zerohour.tuned.conf   # PASS/FAIL vs 4 ms
-./build/zerohour run lab/pcaps/multichange.pcap -c zerohour.tuned.conf                     # 3 benign changes: clear
+./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/busy.pcap -c zerohour.tuned.conf   # PASS/FAIL vs 4 ms
+./build/zerohour run lab/pcaps/multichange.pcap -c zerohour.tuned.conf                   # 3 benign changes: clear
 ```
 
-Trade-off: an interceptor that copies each server's JA4S and hop count fails only check B, and the tuned method
-treats one failed check as normal (the plan method catches it). See `/compare` on the site.
+Trade-off: an interceptor that copies each server's JA4S and hop count fails only check B; the tuned method treats
+one failed check as weak evidence and detects it far less often. The site's `/tuning` page shows how the weights and
+the cap were chosen; `/compare` shows both constraints.
 
 ## Web console (Vercel)
 
 `site/` is the deployed demo: static pages plus Vercel functions in `site/api/`. The engine (`site/lib/engine.js`)
 is a port of `src/trw.cpp` and is checked against the C++ sensor by `node site/test/parity.mjs`. The console's
-traffic is simulated (`site/lib/live.js`); the lab replay and packet evidence come from `lab/pcaps`.
+live replay reads `lab/pcaps/busy.pcap` (real lab handshakes, 8 clients, 2 intercepted); the false-alert
+simulation is `site/lib/sim.js` and the tuning sweep `site/lib/tune.js`.
 Regenerate fixtures with `sh site/scripts/fixtures.sh`; deploy with `cd site && vercel deploy --prod`.
 
 ## Tests

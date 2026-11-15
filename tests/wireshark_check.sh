@@ -9,7 +9,7 @@ OUT=e2e/artifacts/wireshark.txt
 mkdir -p e2e/artifacts
 "$T" --version | head -1 > $OUT
 fail=0
-for s in learn normal onechange multichange attack; do
+for s in learn normal onechange multichange attack busy; do
   f=lab/pcaps/$s.pcap
   ws=$("$T" -r $f -Y "tls.handshake.type == 1" -T fields -E separator=' ' -e tls.handshake.extensions_server_name -e tls.handshake.ja4)
   wsttl=$("$T" -r $f -Y "tls.handshake.type == 2" -T fields -e ip.ttl)

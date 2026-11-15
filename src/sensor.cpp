@@ -31,6 +31,7 @@ Config load_config(const std::string& path) {
         else if (k == "beta") c.trw.beta = v;
         else if (k == "ttl_delta") c.ttl_delta = static_cast<int>(v);
         else if (k == "weighted") c.trw.weighted = v != 0;
+        else if (k == "log_sync") c.log_sync = static_cast<int>(v);
         else if (k == "a0") c.trw.a0 = v;
         else if (k == "a1") c.trw.a1 = v;
         else if (k == "b0") c.trw.b0 = v;
@@ -44,8 +45,8 @@ Config load_config(const std::string& path) {
     auto prob = [](double x) { return x > 0 && x < 1; };
     // The walk only moves the right way when theta0 > theta1 and alpha < beta (paper, Sec. 4).
     if (!prob(p.theta0) || !prob(p.theta1) || !prob(p.alpha) || !prob(p.beta) || p.theta0 <= p.theta1 || p.alpha >= p.beta ||
-        c.ttl_delta < 0)
-        throw std::runtime_error("config: need 0<theta1<theta0<1, 0<alpha<beta<1, ttl_delta>=0");
+        c.ttl_delta < 0 || c.log_sync < 0 || c.log_sync > 2)
+        throw std::runtime_error("config: need 0<theta1<theta0<1, 0<alpha<beta<1, ttl_delta>=0, log_sync 0..2");
     // A failed check must be more probable with an interceptor, or the weighted step points the wrong way.
     if (!prob(p.a0) || !prob(p.a1) || !prob(p.b0) || !prob(p.b1) || !prob(p.d0) || !prob(p.d1) || p.a0 >= p.a1 ||
         p.b0 >= p.b1 || p.d0 >= p.d1 || p.min_sites < 1)
@@ -291,7 +292,7 @@ std::string json_set(const std::set<std::string>& s) {
 std::vector<Event> run(const std::vector<Observation>& obs, const Baseline& b, const Config& c, const std::string& log_path) {
     Trw trw(c.trw);
     std::optional<ChainLog> log;
-    if (!log_path.empty()) log.emplace(log_path);
+    if (!log_path.empty()) log.emplace(log_path, c.log_sync);
     std::vector<Event> out;
     for (const Observation& o : obs) {
         Event e;
@@ -310,7 +311,8 @@ std::vector<Event> run(const std::vector<Observation>& obs, const Baseline& b, c
         e.result = !e.step.counted ? "repeat" : e.checks.mismatch() ? "mismatch" : "match";
         if (log && e.step.decision != Decision::Pending)
             log->append("{\"type\":" + json_str(to_string(e.step.decision)) + ",\"client\":" + json_str(o.client) +
-                        ",\"sites\":" + std::to_string(e.step.sites) + ",\"score\":" + num(e.step.score) + "}");
+                        ",\"sites\":" + std::to_string(e.step.sites) + ",\"score\":" + num(e.step.score) + "}",
+                        e.step.decision == Decision::Alert);
         else if (log && e.result == "mismatch")
             log->append("{\"type\":\"notice\",\"client\":" + json_str(o.client) + ",\"site\":" + json_str(o.site) +
                         ",\"score\":" + num(e.step.score) + "}");

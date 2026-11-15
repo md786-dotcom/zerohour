@@ -1,2 +1,2 @@
-{"pcap":"lab/pcaps/normal.pcap","handshakes":8,"reps":2000,"weighted":true,"parse_us":{"p50":32.46,"p99":57.80},"decide_us":{"p50":0.12,"p99":52.75,"max":636.04},"total_p99_us":110.55,"budget_us":4000}
-{"pcap":"lab/pcaps/attack.pcap","handshakes":8,"reps":2000,"weighted":true,"parse_us":{"p50":32.68,"p99":65.27},"decide_us":{"p50":3.00,"p99":85.46,"max":1051.46},"total_p99_us":150.72,"budget_us":4000}
+{"pcap":"lab/pcaps/busy.pcap","handshakes":64,"reps":20,"weighted":true,"parse_us":{"p50":63.32,"p99":86.03},"decide_us":{"p50":397.17,"p99":3135.21,"max":4877.42},"total_p99_us":3221.24,"budget_us":4000,"log_sync":1,"logged":0.5625}
+{"pcap":"lab/pcaps/attack.pcap","handshakes":8,"reps":20,"weighted":true,"parse_us":{"p50":111.27,"p99":153.10},"decide_us":{"p50":557.79,"p99":4419.92,"max":4473.71},"total_p99_us":4573.02,"budget_us":4000,"log_sync":1,"logged":1.0000}

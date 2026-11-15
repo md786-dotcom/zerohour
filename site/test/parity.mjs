@@ -16,7 +16,7 @@ LAB.learn.forEach(o => base.learn(o));
 
 let fail = 0, n = 0;
 for (const [conf, p] of [['zerohour.conf', PLAN], ['zerohour.tuned.conf', TUNED]])
-  for (const s of ['normal', 'onechange', 'multichange', 'attack']) {
+  for (const s of ['normal', 'onechange', 'multichange', 'attack', 'busy']) {
     const cpp = JSON.parse(zh('run', `lab/pcaps/${s}.pcap`, '-b', join(dir, 'b.tsv'), '-c', conf, '-l', join(dir, 'l.log'), '--json'));
     const js = runEvents(LAB[s], base, p);
     const bad = cpp.findIndex((c, i) => { const j = js[i]; n++;

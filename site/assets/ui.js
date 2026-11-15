@@ -46,13 +46,13 @@ export function walkChart(svg, series, { upper, lower }) {
     s += `<line class="grid-l" x1="${L}" x2="${x(xmax)}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
   for (let i = 1; i <= xmax; i++) s += `<text x="${x(i)}" y="${H - 14}" text-anchor="middle">${i}</text>`;
   s += `<text x="${(L + x(xmax)) / 2}" y="${H - 1}" text-anchor="middle">sites counted in the test</text>`;
-  for (const [v, label, col] of [[upper, 'alert', 'var(--critical)'], [lower, 'clear', 'var(--good)']])
+  for (const [v, label, col] of [[upper, 'alert', 'var(--alert)'], [lower, 'clear', 'var(--clear)']])
     s += `<line class="thr" stroke="${col}" x1="${L}" x2="${x(xmax)}" y1="${y(v)}" y2="${y(v)}"/><text x="${x(xmax) + 6}" y="${y(v) + 4}">${sgn(v)} ${label}</text>`;
   for (const { name, color, dash, pts } of series) {
     s += `<path fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}
       d="${pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ')}"/>`;
     for (const [a, b, r] of pts.slice(1))
-      s += `<circle cx="${x(a)}" cy="${y(b)}" r="${r === 'mismatch' ? 5 : 4}" fill="${r === 'mismatch' ? color : 'var(--surface)'}" stroke="${color}" stroke-width="2"/>
+      s += `<circle cx="${x(a)}" cy="${y(b)}" r="${r === 'mismatch' ? 5 : 4}" fill="${r === 'mismatch' ? color : 'var(--card)'}" stroke="${color}" stroke-width="2"/>
         <circle cx="${x(a)}" cy="${y(b)}" r="12" fill="transparent" data-tip="<b>${esc(name)}</b> · site ${a}<br>${esc(r)} · score ${sgn(b)}"/>`;
   }
   svg.innerHTML = s;

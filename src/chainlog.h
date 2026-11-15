@@ -6,20 +6,25 @@
 // Payload must not contain '\t' or '\n' (append() replaces them with ' ').
 #pragma once
 #include <cstddef>
-#include <fstream>
 #include <string>
 
 class ChainLog {
 public:
-    explicit ChainLog(std::string path);  // continues an existing log from its last record
-    void append(const std::string& payload);
+    // sync: 0 = write only (OS page cache), 1 = ordered (every record survives in order; an alert is fully on disk
+    // before append returns), 2 = full (every record fully on disk before append returns).
+    explicit ChainLog(std::string path, int sync = 0);  // continues an existing log from its last record
+    ~ChainLog();
+    ChainLog(const ChainLog&) = delete;
+    ChainLog& operator=(const ChainLog&) = delete;
+    void append(const std::string& payload, bool alert = false);
     size_t records() const { return seq_; }
 
 private:
     std::string path_;
     std::string last_hash_;
     size_t seq_ = 0;
-    std::ofstream out_;  // kept open: reopening the file per record cost up to 2 ms per alert
+    int fd_ = -1;  // kept open: reopening the file per record cost up to 2 ms per alert
+    int sync_ = 0;
 };
 
 struct VerifyResult {

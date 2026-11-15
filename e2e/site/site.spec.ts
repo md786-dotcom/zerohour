@@ -1,67 +1,99 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
-// The deployed site, end to end: live console, server-side chain verify, lab replay, Wireshark evidence, and the
-// before/after page in a new window. Full-page screenshots land in artifacts/site-*.png.
+// The deployed site at laptop size (1440 x 900). Every tab must fit one screen: no page scroll.
+// Screenshots of every tab land in artifacts/laptop-*.png for a visual check.
 
-test('console: live data from the backend, decisions under the 4 ms budget', async ({ page }) => {
+async function fitsOneScreen(page: Page, name: string) {
+  await page.waitForTimeout(400);  // let charts draw at their final size
+  const { sh, ih } = await page.evaluate(() => ({ sh: document.documentElement.scrollHeight, ih: innerHeight }));
+  expect(sh, `${name}: page scrolls`).toBeLessThanOrEqual(ih + 1);
+  await page.screenshot({ path: `artifacts/laptop-${name}.png` });
+}
+
+test('live replay: run, stop, reset; the tuned method alerts only on the two intercepted clients', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#live-text')).toContainText('Live', { timeout: 15_000 });
-  await expect(page.locator('#clients tr')).toHaveCount(32);
-  await expect(page.locator('#events tr').first()).toBeVisible();
-  const p99 = parseFloat(await page.getByTestId('k-lat').innerText());
-  expect(p99).toBeGreaterThan(0);
-  expect(p99).toBeLessThan(4000);  // microseconds
-  const plan = page.waitForRequest(r => r.url().includes('/api/live?method=plan'));
-  await page.getByRole('button', { name: 'Plan method' }).click();
-  await plan;
-  await page.screenshot({ path: 'artifacts/site-console.png', fullPage: true });
+  await expect(page.getByTestId('tile')).toHaveCount(8, { timeout: 20_000 });  // first call can hit a cold function
+  await expect(page.getByTestId('progress')).toHaveText('0 of 64 handshakes');
+  await fitsOneScreen(page, 'live-start');
+
+  await page.getByTestId('run').click();
+  await expect(page.getByTestId('stop')).toBeEnabled();
+  await page.waitForTimeout(1500);
+  await page.getByTestId('stop').click();
+  const stopped = await page.getByTestId('progress').innerText();
+  expect(parseInt(stopped)).toBeGreaterThan(0);
+  await page.waitForTimeout(1200);
+  await expect(page.getByTestId('progress')).toHaveText(stopped);  // Stop holds the replay
+
+  await page.getByTestId('run').click();
+  await expect(page.getByTestId('progress')).toHaveText('64 of 64 handshakes', { timeout: 60_000 });
+  const alerts = page.locator('[data-testid=tile][data-verdict=alert]');
+  await expect(alerts).toHaveCount(2);
+  for (const ip of ['10.0.1.13', '10.0.1.16']) await expect(page.locator(`[data-testid=tile][data-ip="${ip}"]`)).toHaveAttribute('data-verdict', 'alert');
+  await expect(page.getByTestId('k-fp')).toHaveText('0');
+  await expect(page.getByTestId('k-caught')).toContainText('2');
+  await fitsOneScreen(page, 'live-done');
+
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await expect(page.getByTestId('k-fp')).toHaveText('0');  // the plan method on the same capture: also no false alert
+  await page.getByTestId('reset').click();
+  await expect(page.getByTestId('progress')).toHaveText('0 of 64 handshakes');
 });
 
-test('evidence log: the server finds an edited record', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('#log tr').first()).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('verify').click();
-  await expect(page.getByTestId('verify-result')).toContainText('Chain intact');
-  await page.getByTestId('tamper').click();
-  await expect(page.getByTestId('verify-result')).toContainText('Chain broken at record');
-});
-
-test('lab replay: many benign changes clear with the tuned method, attack alerts with both', async ({ page }) => {
+test('lab scenarios: many normal changes clear with the tuned method; the attack alerts with both', async ({ page }) => {
   await page.goto('/#lab');
-  await expect(page.locator('#lab-verdict')).toContainText('Plan: Alert after 3 sites · Tuned: Alert after 3 sites');
-  await page.getByRole('tab', { name: 'Many changes' }).click();
-  await expect(page.locator('#lab-verdict')).toContainText('Plan: No decision · Tuned: Clear after 3 sites');
-  await expect(page.locator('#lab-rows tr')).toHaveCount(8);
+  await expect(page.getByTestId('lab-verdict')).toHaveText('Plan: Alert after 3 sites · Tuned: Alert after 3 sites');
+  await fitsOneScreen(page, 'lab');
+  await page.getByRole('button', { name: 'Many changes' }).click();
+  await expect(page.getByTestId('lab-verdict')).toContainText('Plan: No decision · Tuned: Clear');
 });
 
-test('packet evidence: Wireshark shows the forged issuer', async ({ page }) => {
-  await page.goto('/#evidence');
-  await expect(page.locator('#pkts td.cert-int').first()).toContainText('Interceptor CA');
+test('wireshark: the forged issuer shows in the attack capture only', async ({ page }) => {
+  await page.goto('/#wireshark');
+  await expect(page.locator('#pkts td.forged').first()).toHaveText('Interceptor CA');
   await expect(page.locator('#tree mark').first()).toHaveText('Interceptor CA');
-  await page.getByRole('tab', { name: 'learn.pcap' }).click();
-  await expect(page.locator('#pkts td.cert-int')).toHaveCount(0);
-  await expect(page.locator('#ev-download')).toHaveAttribute('href', '/pcaps/learn.pcap');
+  await fitsOneScreen(page, 'wireshark');
+  await page.getByRole('button', { name: 'learn.pcap' }).click();
+  await expect(page.locator('#pkts td.forged')).toHaveCount(0);
 });
 
-test('before vs after opens in a new window and shows both constraints', async ({ page, context }) => {
+test('evidence log: the server finds a changed record', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('run').click();
+  await expect(page.getByTestId('progress')).toHaveText(/^(1[2-9]|[2-6]\d) of 64/, { timeout: 30_000 });
+  await page.getByTestId('stop').click();
+  await page.getByRole('tab', { name: 'Evidence log' }).click();
+  await page.getByTestId('verify').click();
+  await expect(page.getByTestId('verify-result')).toContainText('Log is correct');
+  await fitsOneScreen(page, 'log');
+  await page.getByTestId('tamper').click();
+  await expect(page.getByTestId('verify-result')).toContainText('was changed');
+});
+
+test('how we tuned it: four steps, each on one screen', async ({ page }) => {
+  await page.goto('/tuning');
+  await expect(page.locator('#rates .bar')).toHaveCount(6, { timeout: 30_000 });
+  await fitsOneScreen(page, 'tuning-measure');
+  for (const [tab, name] of [['2 · Weigh', 'weigh'], ['3 · Cap', 'cap'], ['4 · Result', 'result']] as const) {
+    await page.getByRole('tab', { name: tab }).click();
+    await fitsOneScreen(page, `tuning-${name}`);
+  }
+  await expect(page.locator('#sweep tr.sel')).toContainText('chosen');
+  await expect(page.locator('#r-real .after .big')).toHaveText('0');
+});
+
+test('before vs after opens in a new window; both constraints on one screen each', async ({ page, context }) => {
   await page.goto('/');
   const [cmp] = await Promise.all([context.waitForEvent('page'), page.getByTestId('open-compare').click()]);
+  await cmp.setViewportSize({ width: 1440, height: 900 });
   await cmp.waitForLoadState();
   expect(new URL(cmp.url()).pathname).toBe('/compare');
-  await expect(cmp.locator('#rt-before')).toContainText(/µs|ms/);
-  await expect(cmp.locator('#fp-before')).toContainText('%', { timeout: 30_000 });
-  await expect(cmp.locator('#fp-table tr')).toHaveCount(4);
-  await expect(cmp.locator('#cases tr')).toHaveCount(8);
-  const before = parseFloat(await cmp.locator('#fp-before').innerText()), after = parseFloat(await cmp.locator('#fp-after').innerText());
+  await expect(cmp.locator('#rt-vs .after .badge')).toHaveText('In budget');
+  await expect(cmp.locator('#rt-vs .before .badge')).toHaveText('Over budget');
+  await fitsOneScreen(cmp, 'compare-runtime');
+  await cmp.getByRole('tab', { name: /Fewer false alerts/ }).click();
+  await expect(cmp.locator('#fp-table tr')).toHaveCount(4, { timeout: 60_000 });
+  const before = parseFloat(await cmp.locator('#fp-vs .before .big').innerText()), after = parseFloat(await cmp.locator('#fp-vs .after .big').innerText());
   expect(after).toBeLessThan(before);
-  await cmp.screenshot({ path: 'artifacts/site-compare.png', fullPage: true });
-});
-
-test('phone width: no horizontal page scroll', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 800 });
-  for (const path of ['/', '/compare']) {
-    await page.goto(path);
-    await page.waitForTimeout(1500);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-  }
+  await fitsOneScreen(cmp, 'compare-alerts');
 });

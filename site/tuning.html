@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zerohour Tuning</title>
+<meta name="description" content="How the zerohour detection model was tuned: measure, weigh, cap.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cpath d='M9 10h14L9 22h14' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d1d1f"/><path d="M9 10h14L9 22h14" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>zerohour</a>
+  <nav aria-label="Pages">
+    <a href="/">Demo</a>
+    <a href="/tuning" aria-current="page">How we tuned it</a>
+    <a href="/compare" target="_blank" rel="noopener">Before vs after ↗</a>
+    <a href="https://github.com/md786-dotcom/zerohour" target="_blank" rel="noopener">Code ↗</a>
+  </nav>
+</div></header>
+
+<main>
+  <div class="seg tabs" role="tablist" aria-label="Tuning steps" id="tabs">
+    <button role="tab" aria-selected="true" data-tab="measure">1 · Measure</button>
+    <button role="tab" aria-selected="false" data-tab="weigh">2 · Weigh</button>
+    <button role="tab" aria-selected="false" data-tab="cap">3 · Cap</button>
+    <button role="tab" aria-selected="false" data-tab="result">4 · Result</button>
+  </div>
+
+  <section class="panel" data-panel="measure" role="tabpanel">
+    <div class="head"><div><h1>Measure each check</h1><p>The calibrate command compares a clean capture and an attack capture with the baseline. It gives the failure rate of each check, without and with an interceptor.</p></div></div>
+    <div class="row halves">
+      <div class="card"><div class="top"><div><h2>Failure rate of each check</h2><p class="sub">p₀: no interceptor. p₁: interceptor on the path.</p></div></div>
+        <div class="bars" id="rates"></div>
+        <div class="legend"><span><i style="border-color:var(--clear)"></i>No interceptor (p₀)</span><span><i style="border-color:var(--alert)"></i>Interceptor (p₁)</span></div></div>
+      <div class="card"><div class="top"><div><h2>The three checks</h2><p class="sub">One site can fail one, two or three checks.</p></div></div>
+        <table><thead><tr><th>Check</th><th>The sensor compares</th><th>A normal cause of change</th></tr></thead><tbody>
+          <tr><td><span class="chip bad">A</span></td><td>Server fingerprint (JA4S)</td><td>New server software</td></tr>
+          <tr><td><span class="chip bad">B</span></td><td>Certificate key</td><td>Certificate renewal</td></tr>
+          <tr><td><span class="chip bad">D</span></td><td>Network path (TTL)</td><td>New route</td></tr>
+        </tbody></table>
+        <p class="note" style="margin-top:auto">TLS 1.3 hides the certificate, so check B is not available on most sites.</p></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="weigh" role="tabpanel" hidden>
+    <div class="head"><div><h1>Give each check a weight</h1><p>The paper adds the same step for any change. We give each check its own weight from its two rates.</p></div></div>
+    <div class="row halves">
+      <div class="card"><div class="top"><div><h2>Weight of each check</h2><p class="sub">Right: the check failed. Left: the check held.</p></div></div>
+        <svg class="chart" id="weights" role="img" aria-label="Weight of each check"></svg>
+        <div class="legend"><span><i style="border-color:var(--alert)"></i>Check failed</span><span><i style="border-color:var(--clear)"></i>Check held</span></div></div>
+      <div class="card"><div class="top"><div><h2>The formula</h2><p class="sub">Log-likelihood ratio of each check</p></div></div>
+        <pre class="formula">failed:  weight = ln(p₁ / p₀)
+held:    weight = ln((1 − p₁) / (1 − p₀))
+site step = sum of the weights of its checks</pre>
+        <h2 style="margin-top:18px">Example: one renewed certificate</h2>
+        <p class="sub" style="margin-bottom:10px">TLS 1.2 site. Check B failed, checks A and D held.</p>
+        <table><tbody id="example"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="cap" role="tabpanel" hidden>
+    <div class="head"><div><h1>Set a cap for each site</h1><p>A cap limits the step of one site. A smaller cap gives fewer false alerts, but the sensor needs more sites to find an interceptor.</p></div>
+      <span class="muted" id="sweep-meta"></span></div>
+    <div class="row halves" style="flex:none;height:250px">
+      <div class="card"><div class="top"><div><h2>False alerts</h2><p class="sub">Tests without an interceptor that end in an alert</p></div></div><svg class="chart" id="c-fp" role="img" aria-label="False alerts for each cap"></svg></div>
+      <div class="card"><div class="top"><div><h2>Sites to an alert</h2><p class="sub">Mean number of sites before the alert</p></div></div><svg class="chart" id="c-sites" role="img" aria-label="Sites to an alert for each cap"></svg></div>
+    </div>
+    <div class="card" style="flex:1"><div class="top"><div><h2>All caps</h2><p class="sub" id="rule"></p></div></div>
+      <div class="scroll"><table><thead><tr><th>Fewest sites for a decision</th><th class="num-c">Cap per site</th><th class="num-c">False alerts</th><th class="num-c">Detection</th><th class="num-c">Sites to an alert</th></tr></thead><tbody id="sweep"></tbody></table></div></div>
+  </section>
+
+  <section class="panel" data-panel="result" role="tabpanel" hidden>
+    <div class="head"><div><h1>The result</h1><p>The tuned method gives far fewer false alerts. It finds an interceptor a little less often and needs more sites.</p></div></div>
+    <div class="row halves" style="flex:none">
+      <div class="card"><div class="top"><h2>False alerts, simulated</h2></div><div class="vs" id="r-fp"></div></div>
+      <div class="card"><div class="top"><h2>False alerts, real capture busy.pcap</h2></div><div class="vs" id="r-real"></div></div>
+    </div>
+    <div class="row halves" style="flex:none">
+      <div class="card"><div class="top"><h2>Detection</h2></div><div class="vs" id="r-det"></div></div>
+      <div class="card"><div class="top"><h2>Sites to an alert</h2></div><div class="vs" id="r-sites"></div></div>
+    </div>
+  </section>
+</main>
+<script type="module" src="/assets/tuning.js"></script>
+</body>
+</html>

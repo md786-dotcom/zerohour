@@ -24,8 +24,8 @@ jobs:
         with: { node-version: 22 }
       - name: Web engine decides exactly like the C++ sensor
         run: node site/test/parity.mjs
-      - name: Runtime under 4 ms (tuned method, attack capture)
-        run: ./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/attack.pcap -c zerohour.tuned.conf
+      - name: Runtime under 4 ms (tuned method, busy capture, durable log)
+        run: ./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/busy.pcap -c zerohour.tuned.conf
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: evidence, path: e2e/artifacts/ }

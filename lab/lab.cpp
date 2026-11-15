@@ -1,5 +1,5 @@
 // zh_lab <certsdir> <outdir>: real TLS 1.2 handshakes run in-process through OpenSSL memory BIOs,
-// written as Ethernet/IPv4/TCP packets to learn/normal/onechange/attack/multichange.pcap plus manifest.txt.
+// written as Ethernet/IPv4/TCP packets to learn/normal/onechange/attack/multichange/busy.pcap plus manifest.txt.
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -46,6 +46,7 @@ struct Flow {
     uint32_t cseq, sseq;  // next sequence number each side sends
     int npkt = 0;
     uint16_t ipid = 1;
+    uint32_t cip = kClientIp;
 };
 
 void packet(Flow& f, bool from_client, uint8_t flags, const uint8_t* data = nullptr, size_t n = 0) {
@@ -64,8 +65,8 @@ void packet(Flow& f, bool from_client, uint8_t flags, const uint8_t* data = null
     put16(ip + 6, 0x4000);  // DF
     ip[8] = from_client ? 64 : f.sttl;
     ip[9] = 6;
-    put32(ip + 12, from_client ? kClientIp : f.sip);
-    put32(ip + 16, from_client ? f.sip : kClientIp);
+    put32(ip + 12, from_client ? f.cip : f.sip);
+    put32(ip + 16, from_client ? f.sip : f.cip);
     put16(ip + 10, fold(sum16(ip, 20)));
 
     uint8_t* t = ip + 20;
@@ -141,6 +142,59 @@ SSL_CTX* server_ctx(const Profile& p, const std::string& cert, const std::string
     return c;
 }
 
+// One TCP connection: handshake, a full TLS 1.2 handshake and a 4 KB HTTP answer, then FIN. Adds a manifest line.
+void connection(Flow& f, SSL_CTX* cctx, const Profile& prof, const std::string& certs, const std::string& file,
+                const std::string& host, FILE* manifest, const char* scenario) {
+    packet(f, true, SYN);
+    packet(f, false, SYN | ACK);
+    packet(f, true, ACK);
+
+    SSL_CTX* sctx = server_ctx(prof, certs + "/" + file + ".crt", certs + "/" + file + ".key");
+    SSL* c = new_ssl(cctx);
+    SSL* s = new_ssl(sctx);
+    SSL_set_connect_state(c);
+    SSL_set_accept_state(s);
+    SSL_set_tlsext_host_name(c, host.c_str());
+    for (int i = 0; i < 8 && !(SSL_is_init_finished(c) && SSL_is_init_finished(s)); ++i) {
+        step(c);
+        pump(f, true, c, s);
+        step(s);
+        pump(f, false, s, c);
+    }
+    if (!SSL_is_init_finished(c) || !SSL_is_init_finished(s)) die("handshake did not finish: " + host);
+
+    const std::string req = "GET / HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
+    // A 4 KB page so the response spans several MSS-sized segments.
+    const std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: 4000\r\n\r\n" + std::string(4000, 'x');
+    char buf[8192];
+    if (SSL_write(c, req.data(), req.size()) <= 0) die("client write");
+    pump(f, true, c, s);
+    if (SSL_read(s, buf, sizeof buf) <= 0) die("server read");
+    if (SSL_write(s, resp.data(), resp.size()) <= 0) die("server write");
+    pump(f, false, s, c);
+    if (SSL_read(c, buf, sizeof buf) <= 0) die("client read");
+
+    packet(f, true, FIN | ACK);
+    packet(f, false, FIN | ACK);
+    packet(f, true, ACK);
+
+    const unsigned char* sel = nullptr;
+    unsigned sel_len = 0;
+    SSL_get0_alpn_selected(c, &sel, &sel_len);
+    char issuer[128] = "-";
+    X509_NAME_get_text_by_NID(X509_get_issuer_name(SSL_get0_peer_certificate(c)), NID_commonName,
+                              issuer, sizeof issuer);
+    fprintf(manifest, "%s\t%s\t%u.%u.%u.%u\t%s\t%s\t%s\t%s\t%d\t10.0.%u.%u\n", scenario, host.c_str(), f.sip >> 24,
+            f.sip >> 16 & 255, f.sip >> 8 & 255, f.sip & 255,
+            SSL_get_cipher_name(c), SSL_get_version(c),
+            sel_len ? std::string(reinterpret_cast<const char*>(sel), sel_len).c_str() : "-", issuer, f.sttl,
+            f.cip >> 8 & 255, f.cip & 255);
+
+    SSL_free(c);
+    SSL_free(s);
+    SSL_CTX_free(sctx);
+}
+
 const char* kScenario[] = {"learn", "normal", "onechange", "attack", "multichange"};
 
 }  // namespace
@@ -161,7 +215,7 @@ int main(int argc, char** argv) {
 
     FILE* manifest = fopen((outdir + "/manifest.txt").c_str(), "w");
     if (!manifest) die("open manifest.txt");
-    fprintf(manifest, "# scenario\tsite\tserver_ip\tcipher\tversion\talpn\tissuer_cn\tttl\n");
+    fprintf(manifest, "# scenario\tsite\tserver_ip\tcipher\tversion\talpn\tissuer_cn\tttl\tclient\n");
 
     for (int sc = 0; sc < 5; ++sc) {
         const std::string path = outdir + "/" + kScenario[sc] + ".pcap";
@@ -185,52 +239,34 @@ int main(int argc, char** argv) {
             Flow f{out, 93u << 24 | 184u << 16 | 216u << 8 | (10u + site), uint16_t(40000 + sc * 100 + site),
                    ttl, 1700000000L + site - 1, 0x10000000u + site * 0x10000u, 0x20000000u + site * 0x10000u};
 
-            packet(f, true, SYN);
-            packet(f, false, SYN | ACK);
-            packet(f, true, ACK);
-
-            SSL_CTX* sctx = server_ctx(prof, certs + "/" + file + ".crt", certs + "/" + file + ".key");
-            SSL* c = new_ssl(cctx);
-            SSL* s = new_ssl(sctx);
-            SSL_set_connect_state(c);
-            SSL_set_accept_state(s);
-            SSL_set_tlsext_host_name(c, host.c_str());
-            for (int i = 0; i < 8 && !(SSL_is_init_finished(c) && SSL_is_init_finished(s)); ++i) {
-                step(c);
-                pump(f, true, c, s);
-                step(s);
-                pump(f, false, s, c);
-            }
-            if (!SSL_is_init_finished(c) || !SSL_is_init_finished(s)) die("handshake did not finish: " + host);
-
-            const std::string req = "GET / HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
-            // A 4 KB page so the response spans several MSS-sized segments.
-            const std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: 4000\r\n\r\n" + std::string(4000, 'x');
-            char buf[8192];
-            if (SSL_write(c, req.data(), req.size()) <= 0) die("client write");
-            pump(f, true, c, s);
-            if (SSL_read(s, buf, sizeof buf) <= 0) die("server read");
-            if (SSL_write(s, resp.data(), resp.size()) <= 0) die("server write");
-            pump(f, false, s, c);
-            if (SSL_read(c, buf, sizeof buf) <= 0) die("client read");
-
-            packet(f, true, FIN | ACK);
-            packet(f, false, FIN | ACK);
-            packet(f, true, ACK);
-
-            const unsigned char* sel = nullptr;
-            unsigned sel_len = 0;
-            SSL_get0_alpn_selected(c, &sel, &sel_len);
-            char issuer[128] = "-";
-            X509_NAME_get_text_by_NID(X509_get_issuer_name(SSL_get0_peer_certificate(c)), NID_commonName,
-                                      issuer, sizeof issuer);
-            fprintf(manifest, "%s\t%s\t93.184.216.%d\t%s\t%s\t%s\t%s\t%d\n", kScenario[sc], host.c_str(), 10 + site,
-                    SSL_get_cipher_name(c), SSL_get_version(c),
-                    sel_len ? std::string(reinterpret_cast<const char*>(sel), sel_len).c_str() : "-", issuer, ttl);
-
-            SSL_free(c);
-            SSL_free(s);
-            SSL_CTX_free(sctx);
+            connection(f, cctx, prof, certs, file, host, manifest, kScenario[sc]);
+        }
+        pcap_dump_close(out);
+        pcap_close(dead);
+    }
+    // busy: 8 clients each visit all 8 sites in their own order, interleaved in time (64 connections). Normal changes
+    // at random: new server stack (A) 10%, renewed certificate (B) 8%, route change (D) 12%. Clients 3 and 6
+    // (10.0.1.13, 10.0.1.16) sit behind the interceptor. Used by `zerohour bench` as a realistic mix of quiet, logged and alerting handshakes.
+    {
+        const std::string path = outdir + "/busy.pcap";
+        pcap_t* dead = pcap_open_dead(DLT_EN10MB, 65535);
+        pcap_dumper_t* out = pcap_dump_open(dead, path.c_str());
+        if (!out) die(path + ": " + pcap_geterr(dead));
+        uint32_t seed = 2026;
+        auto r = [&] { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.0; };
+        for (int i = 0; i < 64; ++i) {
+            const int cl = i % 8, site = (cl * 3 + i / 8 * 5) % 8 + 1;  // 5 is coprime to 8: every site once
+            const bool attack = cl == 2 || cl == 5;
+            const bool a = !attack && r() < 0.10, b = !attack && r() < 0.08, d = !attack && r() < 0.12;
+            const bool origin_a = (site <= 4) != a;  // a new server stack: the other origin profile
+            const Profile& prof = attack ? kInterceptor : origin_a ? kOriginA : kOriginB;
+            const std::string n = std::to_string(site), host = "site" + n + ".lab";
+            const std::string file = attack ? "int-site" + n : b ? "site" + n + "-renewed" : "site" + n;
+            const int ttl = attack ? 63 : (site <= 4 ? 52 : 116) + int(r() * 3) - 1 + (d ? 7 : 0);
+            Flow f{out, 93u << 24 | 184u << 16 | 216u << 8 | (10u + site), uint16_t(41000 + i), ttl, 1700001000L + i,
+                   0x30000000u + i * 0x10000u, 0x40000000u + i * 0x10000u};
+            f.cip = 10u << 24 | 1u << 8 | (11u + cl);  // 10.0.1.11 .. 10.0.1.18
+            connection(f, cctx, prof, certs, file, host, manifest, "busy");
         }
         pcap_dump_close(out);
         pcap_close(dead);

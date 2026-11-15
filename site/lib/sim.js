@@ -2,15 +2,17 @@
 // (false alerts) and when there is one (detection). Both methods see the same random sites (same seed).
 import { Trw, PLAN, TUNED } from './engine.js';
 
-// Per-site change rates on a revisit. Nominal = the tuned config's a0/b0/d0 plus provider migrations that change
-// every check at once (the plan's "many sites on one provider" limit). Stressed = twice the rates, 3x migrations.
+// Per-site change rates on a revisit, set to be hard on the sensor:
+// - 85% of sites use TLS 1.3, so the certificate (B) is hidden on most sites.
+// - CDNs rotate server stacks (A 10%) and anycast routes (D 12%); 3% of sites move provider and change everything.
+// - The interceptor is not perfect: 25% of sites bypass it (banking, health), it copies the server's TLS
+//   parameters 15% of the time, and only changes the hop count past the TTL check 60% of the time.
 export const MODELS = {
-  nominal: { a: 0.06, b: 0.04, d: 0.06, migrate: 0.01, tls13: 0.7 },
-  stressed: { a: 0.12, b: 0.08, d: 0.12, migrate: 0.03, tls13: 0.7 },
-  attack: { a: 0.95, b: 0.98, d: 0.9, migrate: 0, tls13: 0.5 },  // interceptor on every site; half its sessions TLS 1.3
-  // Trade-off case: an interceptor that copies each server's JA4S and sits at the same hop count, so only the
-  // forged certificate (B) gives it away. One failed check is what the tuned method treats as benign.
-  mimic: { a: 0.06, b: 0.98, d: 0.06, migrate: 0, tls13: 0 },
+  nominal: { a: 0.10, b: 0.05, d: 0.12, migrate: 0.03, tls13: 0.85 },
+  stressed: { a: 0.20, b: 0.10, d: 0.24, migrate: 0.06, tls13: 0.85 },
+  attack: { a: 0.85, b: 0.98, d: 0.60, migrate: 0, tls13: 0.70, bypass: 0.25 },
+  // Trade-off case: an interceptor that copies each server's JA4S and hop count; only the forged certificate shows.
+  mimic: { a: 0.10, b: 0.98, d: 0.12, migrate: 0, tls13: 0.70, bypass: 0.25 },
 };
 const MAX_SITES = 200;
 
@@ -26,6 +28,7 @@ export function rng(seed) {  // mulberry32
 }
 
 function site(r, m) {
+  if (m.bypass && r() < m.bypass) return site(r, MODELS.nominal);  // site not intercepted: looks like normal traffic
   const b_seen = r() >= m.tls13;
   if (r() < m.migrate) return { a: true, b: b_seen, d: true, b_seen, d_seen: true };
   return { a: r() < m.a, b: b_seen && r() < m.b, d: r() < m.d, b_seen, d_seen: true };
@@ -36,27 +39,30 @@ const wilson = (x, n) => {
   return [Math.max(0, mid - half), Math.min(1, mid + half)];
 };
 
+// Runs `trials` whole tests of method p on traffic model m; same seed -> same random sites for every method.
+export function runTests(p, m, trials, seed) {
+  const r = rng(seed), trw = new Trw(p);
+  let alert = 0, clear = 0, sites = 0;
+  for (let i = 0; i < trials; i++) {
+    let s;
+    for (let k = 0; k < MAX_SITES; k++) {
+      s = trw.observe('c', k, trw.step(site(r, m)));
+      if (s.decision !== 'pending') break;
+    }
+    trw.tests.delete('c');  // a test still pending after MAX_SITES ends without a decision
+    if (s.decision === 'alert') alert++;
+    else if (s.decision === 'clear') clear++;
+    sites += s.sites;
+  }
+  return { alert_rate: alert / trials, alert_ci: wilson(alert, trials), clear_rate: clear / trials,
+    pending_rate: (trials - alert - clear) / trials, mean_sites: sites / trials, alerts: alert };
+}
+
 export function simulate({ trials = 100000, seed = 2026 } = {}) {
   const t0 = performance.now(), results = {};
   for (const [name, p] of [['plan', PLAN], ['tuned', TUNED]]) {
     results[name] = {};
-    for (const [scen, m] of Object.entries(MODELS)) {
-      const r = rng(seed), trw = new Trw(p);
-      let alert = 0, clear = 0, sites = 0;
-      for (let i = 0; i < trials; i++) {
-        let s;
-        for (let k = 0; k < MAX_SITES; k++) {
-          s = trw.observe('c', k, trw.step(site(r, m)));
-          if (s.decision !== 'pending') break;
-        }
-        trw.tests.delete('c');  // a test still pending after MAX_SITES ends without a decision
-        if (s.decision === 'alert') alert++;
-        else if (s.decision === 'clear') clear++;
-        sites += s.sites;
-      }
-      results[name][scen] = { alert_rate: alert / trials, alert_ci: wilson(alert, trials), clear_rate: clear / trials,
-        pending_rate: (trials - alert - clear) / trials, mean_sites: sites / trials, alerts: alert };
-    }
+    for (const [scen, m] of Object.entries(MODELS)) results[name][scen] = runTests(p, m, trials, seed);
   }
   return { trials, seed, models: MODELS, results, cases: cases(), elapsed_ms: performance.now() - t0 };
 }

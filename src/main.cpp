@@ -78,9 +78,9 @@ int main(int argc, char** argv) {
             Baseline b;
             for (const auto& o : read(files[0])) b.learn(o);
             const std::string lp = (std::filesystem::temp_directory_path() / "zerohour-bench.log").string();
-            const int reps = 2000;
+            const int reps = cfg.log_sync ? 20 : 2000;  // a disk flush costs ms: 20 runs keep a durable bench under a minute
             std::vector<double> parse, decide;
-            size_t n = 0;
+            size_t n = 0, logged = 0;
             for (int r = 0; r < reps; r++) {
                 auto t0 = clk::now();
                 auto obs = read(files[1]);  // libpcap + TCP reassembly + TLS parse + JA4/JA4S + key hash
@@ -88,13 +88,15 @@ int main(int argc, char** argv) {
                 n = obs.size();
                 std::filesystem::remove(lp);
                 Trw trw(cfg.trw);
-                ChainLog lg(lp);
+                ChainLog lg(lp, cfg.log_sync);
                 for (const auto& o : obs) {  // checks + TRW step + hash-chained log write, as in run()
                     auto t1 = clk::now();
                     CheckResult k = b.check(o, cfg.ttl_delta);
                     Step s = cfg.trw.weighted ? trw.observe_delta(o.client, o.site, trw.site_llr({k.a, k.b, k.d, k.b_seen, k.d_seen}))
                                               : trw.observe(o.client, o.site, k.mismatch());
-                    if (s.decision != Decision::Pending || k.mismatch()) lg.append("{\"site\":" + json_str(o.site) + "}");
+                    if (s.decision != Decision::Pending || k.mismatch()) logged++;
+                    if (s.decision != Decision::Pending || k.mismatch())
+                        lg.append("{\"site\":" + json_str(o.site) + "}", s.decision == Decision::Alert);
                     decide.push_back(us(clk::now() - t1));
                 }
             }
@@ -107,13 +109,15 @@ int main(int argc, char** argv) {
                          maxd = pct(decide, 1), total = p99p + p99d;
             if (json) {
                 std::printf("{\"pcap\":%s,\"handshakes\":%zu,\"reps\":%d,\"weighted\":%s,\"parse_us\":{\"p50\":%.2f,\"p99\":%.2f},"
-                            "\"decide_us\":{\"p50\":%.2f,\"p99\":%.2f,\"max\":%.2f},\"total_p99_us\":%.2f,\"budget_us\":4000}\n",
+                            "\"decide_us\":{\"p50\":%.2f,\"p99\":%.2f,\"max\":%.2f},\"total_p99_us\":%.2f,\"budget_us\":4000,\"log_sync\":%d,"
+                            "\"logged\":%.4f}\n",
                             json_str(files[1]).c_str(), n, reps, cfg.trw.weighted ? "true" : "false", p50p, p99p, p50d, p99d,
-                            maxd, total);
+                            maxd, total, cfg.log_sync, double(logged) / decide.size());
                 return 0;
             }
-            std::printf("%s: %zu handshakes x %d runs, %s method\n", files[1].c_str(), n, reps,
-                        cfg.trw.weighted ? "weighted" : "binary");
+            std::printf("%s: %zu handshakes x %d runs, %s method, log_sync %d, %.0f%% of handshakes write a record\n",
+                        files[1].c_str(), n, reps, cfg.trw.weighted ? "weighted" : "binary", cfg.log_sync,
+                        100.0 * logged / decide.size());
             std::printf("  parse + fingerprint  p50 %8.2f us   p99 %8.2f us   (per handshake)\n", p50p, p99p);
             std::printf("  checks + TRW + log   p50 %8.2f us   p99 %8.2f us   max %8.2f us\n", p50d, p99d, maxd);
             std::printf("  total p99 %.2f us = %.3f ms, budget 4 ms: %s\n", total, total / 1000,

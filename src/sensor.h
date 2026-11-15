@@ -11,6 +11,7 @@
 struct Config {
     TrwParams trw;
     int ttl_delta = 2;  // check D fails when |ttl - baseline ttl| > ttl_delta
+    int log_sync = 0;   // ChainLog sync mode: 0 write only, 1 ordered (alerts full), 2 every record full
 };
 Config load_config(const std::string& path);  // key = value lines, '#' comments; missing file -> defaults
 

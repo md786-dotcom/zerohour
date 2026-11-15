@@ -5,7 +5,8 @@ import { createHash } from 'node:crypto';
 // zerohour.conf (plan, "before") and zerohour.tuned.conf ("after").
 export const PLAN = { theta0: 0.9, theta1: 0.2, alpha: 0.01, beta: 0.99, ttl_delta: 2, weighted: false,
   a0: 0.06, a1: 0.95, b0: 0.04, b1: 0.98, d0: 0.06, d1: 0.9, min_sites: 3 };
-export const TUNED = { ...PLAN, weighted: true };
+// Tuned: per-check rates as measured by calibration (site/lib/tune.js), cap at the plan's 3-site minimum.
+export const TUNED = { ...PLAN, weighted: true, a0: 0.127, a1: 0.669, b0: 0.079, b1: 0.755, d0: 0.146, d1: 0.487, min_sites: 3 };
 export const METHODS = { plan: PLAN, tuned: TUNED };
 
 export class Baseline {
