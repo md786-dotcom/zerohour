@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Web engine decides exactly like the C++ sensor
-        run: node site/test/parity.mjs
+        run: npm ci --prefix site && node site/test/parity.mjs
       - name: Runtime under 4 ms (tuned method, busy capture, durable log)
         run: ./build/zerohour bench lab/pcaps/busylearn.pcap lab/pcaps/busy.pcap -c zerohour.tuned.conf
       - uses: actions/upload-artifact@v4
