@@ -53,13 +53,13 @@
   <!-- 2 · Test -->
   <section class="panel" data-panel="test" role="tabpanel" hidden>
     <div class="head">
-      <div><h1>Step 2. Test</h1><p id="t-head">The client visits the same sites again. Through mitmproxy: tick the sites that go through mitmproxy on the client's gateway. One ticked site is one change.</p></div>
+      <div><h1>Step 2. Test</h1><p id="t-head">The client visits the same sites again. Choose the path and a scenario.</p></div>
     </div>
     <div class="controls wrap">
       <div class="seg" role="group" aria-label="Path of the visits" id="path">
         <button type="button" aria-pressed="true" data-path="direct">Direct</button><button type="button" aria-pressed="false" data-path="mitm">Through mitmproxy</button>
       </div>
-      <div class="picks" id="picks" role="group" aria-label="Sites through mitmproxy" hidden></div>
+      <div class="seg" role="group" aria-label="Scenario" id="scen"></div>
       <span class="grow"></span>
       <button class="btn primary" id="test-run" data-testid="test-run" disabled><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>Run test</button>
     </div>
@@ -75,11 +75,11 @@
       <div class="card kpi" id="t-time-card"><div class="label">Decision time, p99</div><div class="num" id="t-time" data-testid="t-time">—</div><div class="foot" id="t-time-foot">Engine time per handshake.</div></div>
     </div>
     <div class="row halves">
-      <div class="card"><div class="top"><div><h2>Score after each site</h2><p class="sub">Filled dot: the site changed. Open dot: the site is the same.</p></div></div>
+      <div class="card"><div class="top"><div><h2>Score after each site</h2><p class="sub" id="t-chart-sub">Filled dot: the site changed. Open dot: the site is the same.</p></div></div>
         <svg class="chart" id="t-chart" role="img" aria-label="Score after each site"></svg></div>
       <div class="card"><div class="top"><div><h2>Each handshake</h2><p class="sub">A, B and D are the three checks against the baseline.</p></div>
         <a class="btn" id="test-dl" hidden download="test.pcap">test.pcap</a></div>
-        <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Site</th><th>Path</th><th>Checks</th><th class="num-c">Step</th><th class="num-c">Score</th></tr></thead>
+        <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Site</th><th>Change</th><th>Checks</th><th class="num-c">Step</th><th class="num-c">Score</th></tr></thead>
           <tbody id="test-rows" data-testid="test-rows"><tr><td colspan="6" class="muted">No test yet.</td></tr></tbody></table></div></div>
     </div>
   </section>

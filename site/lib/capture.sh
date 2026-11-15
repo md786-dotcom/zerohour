@@ -4,9 +4,11 @@
 # tcpdump records the client's side of the link, as a sensor on the client's network would. One subcommand per call:
 #   setup host...        build the client network; pin each host to one IPv4 address for every later visit
 #   start <pcap>         start tcpdump on the client's link, in the background
-#   visit <host> <pcap>  one HTTPS request from the client; prints the HTTP code, then the sensor's parse of <pcap> so far
+#   visit <host> <pcap> [tls12]  one HTTPS request from the client (tls12: ask for TLS 1.2, so the server answers
+#                        with other settings, as after a server update); prints the HTTP code, then the sensor's parse so far
 #   stop                 stop tcpdump (the PCAP is complete after this)
 #   route [ip...]        port 443 to these IPs goes to mitmproxy on the gateway; no IP = every site direct
+#   hops [ip...]         replies from these IPs take a longer route (3 more routers), as after a normal route change
 #   lock / unlock        one test at a time in this VM (a lock older than 3 minutes is from a killed request)
 set -u
 out=/vercel/sandbox/out
@@ -28,11 +30,12 @@ setup)
     echo "$h ${ip:--}"
   done ;;
 start)
-  setsid nohup ip netns exec victim tcpdump -i vc --immediate-mode -U -s 0 -w "$1" 'ip and tcp port 443' >/dev/null 2>"$1.err" </dev/null &
+  # -i any: the client has two links (vc, and vc2 for a changed route); -y LINUX_SLL is a link type the sensor reads
+  setsid nohup ip netns exec victim tcpdump -i any -y LINUX_SLL --immediate-mode -U -s 0 -w "$1" 'ip and tcp port 443' >/dev/null 2>"$1.err" </dev/null &
   for _ in $(seq 100); do grep -q 'listening on' "$1.err" && exit 0; sleep 0.1; done  # a cold VM can take seconds
   echo 'tcpdump did not start' >&2; exit 1 ;;
 visit)  # -k: the handshake is recorded even when the name check fails (an IP address, or mitmproxy's certificate)
-  ip netns exec victim curl -4 -skI --max-time 8 -o /dev/null -w '%{http_code}\n' "https://$1/"
+  ip netns exec victim curl -4 -skI --max-time 8 ${3:+--tls-max 1.2} -o /dev/null -w '%{http_code}\n' "https://$1/"
   sleep 0.2  # tcpdump writes each packet at once (-U); give the last packets time to land
   zerohour show "$2" --json ;;
 stop)
@@ -49,6 +52,25 @@ route)
   for _ in $(seq 100); do ss -ltn | grep -q ':8080 ' && break; sleep 0.1; done
   ss -ltn | grep -q ':8080 ' || { tail -5 $out/mitm.log >&2; echo 'mitmproxy did not start' >&2; exit 1; }
   for ip in "$@"; do iptables -t nat -A PREROUTING -i vh -p tcp -d "$ip" --dport 443 -j REDIRECT --to-port 8080; done ;;
+hops)
+  # Reply path for these IPs: eth0 -> r3 -> r2 -> r1 -> the client's second link. Each router lowers the TTL by 1.
+  if ! ip netns list | grep -qw r1; then
+    ip netns exec victim sysctl -qw net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.default.rp_filter=0  # replies come in on vc2
+    for r in r1 r2 r3; do ip netns add $r; ip netns exec $r sysctl -qw net.ipv4.ip_forward=1 net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.default.rp_filter=0; done
+    link() { ip link add $1 type veth peer name $3; [ $2 = root ] || ip link set $1 netns $2; ip link set $3 netns $4; }
+    on() { if [ $1 = root ]; then "${@:2}"; else ip netns exec "$@"; fi; }
+    link h4 root g4 r3;  on root ip addr add 10.9.14.1/24 dev h4;  on r3 ip addr add 10.9.14.2/24 dev g4
+    link h3 r3 g3 r2;    on r3 ip addr add 10.9.13.1/24 dev h3;    on r2 ip addr add 10.9.13.2/24 dev g3
+    link h2 r2 g2 r1;    on r2 ip addr add 10.9.12.1/24 dev h2;    on r1 ip addr add 10.9.12.2/24 dev g2
+    link h1 r1 vc2 victim; on r1 ip addr add 10.9.11.1/24 dev h1;  on victim ip addr add 10.9.11.2/24 dev vc2
+    for d in root:h4 r3:g4 r3:h3 r2:g3 r2:h2 r1:g2 r1:h1 victim:vc2; do on ${d%%:*} ip link set ${d#*:} up; done
+    on r3 ip route add 10.9.0.0/24 via 10.9.13.2
+    on r2 ip route add 10.9.0.0/24 via 10.9.12.2
+    on r1 ip route add 10.9.0.0/24 via 10.9.11.2
+    ip route add default via 10.9.14.2 dev h4 table 101
+  fi
+  while ip rule del lookup 101 2>/dev/null; do :; done
+  for ip in "$@"; do ip rule add from "$ip" iif "$(ip route | awk '/^default/ {print $5}')" lookup 101; done ;;
 lock)
   [ -n "$(find $out/lock -maxdepth 0 -mmin +3 2>/dev/null)" ] && rmdir $out/lock
   mkdir $out/lock 2>/dev/null || { echo 'A test is running in this VM.' >&2; exit 3; } ;;

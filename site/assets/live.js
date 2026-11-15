@@ -107,9 +107,48 @@ $('#learn-form').addEventListener('submit', async ev => {
 $('#to-test').addEventListener('click', () => show('test'));
 
 // ---------------------------------------------------------------- step 2: test
-let path = 'direct';
-const ipOf = host => sites.find(s => s.host === host)?.ip;
-const picked = () => (path === 'mitm' ? [...$('#picks').children].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.host) : []);
+// Scenarios, as in the lab: each one says what is different on the second visit for each site (by position in the list).
+//   route: replies come through 3 more routers (TTL)   tls: the server answers with other TLS settings   mitm: mitmproxy
+const SCEN = {
+  direct: {
+    normal: { label: 'Normal', text: 'The client visits the sites again. No site changed.', plan: () => ({}) },
+    one: { label: 'One change', text: 'One site has a new route: its replies come through 3 more routers. This is a normal change.',
+      plan: h => ({ [h[1]]: 'route' }) },
+    many: { label: 'Many changes', text: 'Up to four sites changed in normal ways: new routes and new server settings (TLS). One site has both changes.',
+      plan: h => Object.fromEntries(['route', 'tls', 'route', 'both'].slice(0, h.length).map((k, i) => [h[i], k])) },
+  },
+  mitm: {
+    normal: { label: 'Normal', text: 'mitmproxy is on the client’s gateway, but no site goes through it.', plan: () => ({}) },
+    one: { label: 'One change', text: 'One site goes through mitmproxy.', plan: h => ({ [h[1]]: 'mitm' }) },
+    many: { label: 'Many changes', text: 'Two sites go through mitmproxy. The test needs changes on 3 sites to alert.',
+      plan: h => ({ [h[0]]: 'mitm', [h[1]]: 'mitm' }) },
+    attack: { label: 'Attack', text: 'Every site goes through mitmproxy: an interceptor is between the client and all sites.',
+      plan: h => Object.fromEntries(h.map(x => [x, 'mitm'])) },
+  },
+};
+const CHANGE = { none: ['none', 'same as step 1'], route: ['none', 'new route'], tls: ['none', 'new TLS settings'],
+  both: ['none', 'new route + TLS'], mitm: ['alert', 'mitmproxy'] };
+let path = 'direct', scen = 'normal';
+const plan = () => SCEN[path][scen].plan(sites.map(s => s.host));
+function setScen() {
+  if (!SCEN[path][scen]) scen = 'normal';
+  $('#scen').innerHTML = Object.entries(SCEN[path]).map(([k, v]) =>
+    `<button type="button" aria-pressed="${k === scen}" data-scen="${k}">${v.label}</button>`).join('');
+  for (const b of $('#scen').children) b.addEventListener('click', () => { scen = b.dataset.scen; setScen(); });
+  $('#t-head').textContent = `The client visits the same sites again. ${SCEN[path][scen].text}`;
+  if (!running && sites.length) paintPlan();
+}
+for (const b of $('#path').children) b.addEventListener('click', () => {
+  path = b.dataset.path;
+  for (const x of $('#path').children) x.setAttribute('aria-pressed', x === b);
+  setScen();
+});
+const changeCell = k => `<span class="pill ${CHANGE[k ?? 'none'][0]}">${CHANGE[k ?? 'none'][1]}</span>`;
+function paintPlan() {  // before a run: what each site will get
+  const p = plan();
+  $('#test-rows').innerHTML = sites.map((s, i) => `<tr data-site="${esc(s.host)}"><td class="num-c mono muted">${i + 1}</td><td>${esc(s.host)}</td>
+    <td>${changeCell(p[s.host])}</td><td></td><td></td><td></td></tr>`).join('');
+}
 
 // The gauge, its labels and the help text come from the engine's parameters (thresholds and the per-site cap).
 const span = () => params.upper + 1.5;  // the gauge runs from -span to +span
@@ -121,22 +160,13 @@ function setupTest() {
   $('.gauge .lo').textContent = `${sgn(params.lower)} clear`;
   $('.gauge .hi').textContent = `${sgn(params.upper)} alert`;
   $('#t-score-foot').textContent = `Each handshake moves the score. A changed site adds up to ${sgn(params.site_cap)}. A same site subtracts.`;
-  $('#t-head').textContent = `The client visits the same sites again. Through mitmproxy: tick the sites that go through mitmproxy on the client's gateway. One ticked site is one change. The tuned method alerts only after changes on ${params.min_sites} sites.`;
-  // Sites with the same IPv4 address go through mitmproxy together: their picks move together.
-  $('#picks').innerHTML = sites.filter(s => s.ip).map(s => {
-    const twins = sites.filter(x => x.ip === s.ip && x.host !== s.host).map(x => x.host);
-    return `<button type="button" class="pick" aria-pressed="true" data-host="${esc(s.host)}" title="${esc(s.ip)}${twins.length ? ` · same address as ${esc(twins.join(', '))}: they go through mitmproxy together` : ''}">${esc(s.host)}${twins.length ? ' ⛓' : ''}</button>`;
-  }).join('');
-  for (const b of $('#picks').children) b.addEventListener('click', () => {
-    const on = b.getAttribute('aria-pressed') !== 'true';
-    for (const x of $('#picks').children) if (ipOf(x.dataset.host) === ipOf(b.dataset.host)) x.setAttribute('aria-pressed', on);
-  });
   $('#t-n').innerHTML = `0<small>of ${sites.length}</small>`;
   bar('#t-bar', 0, sites.length);
-  $('#t-foot').textContent = ready ? 'Choose the path, then push Run test.' : 'The baseline has too few sites. Do step 1 again.';
+  $('#t-foot').textContent = ready ? 'Choose the path and a scenario, then push Run test.' : 'The baseline has too few sites. Do step 1 again.';
   setScore(0);
+  setScen();
 }
-function resetTest() {  // a new VM: nothing from the last VM's tests stays on screen
+function resetTest() {  // a new run or a new VM: nothing from the last run stays on screen
   lastTest = null;
   $('#test-rows').innerHTML = '<tr><td colspan="6" class="muted">No test yet.</td></tr>';
   $('#t-chart').innerHTML = '';
@@ -149,64 +179,61 @@ function resetTest() {  // a new VM: nothing from the last VM's tests stays on s
   $('#t-time-foot').textContent = 'Engine time per handshake.';
   for (const id of ['#t-score-card', '#t-dec-card', '#t-time-card']) $(id).classList.remove('bad', 'good');
 }
-for (const b of $('#path').children) b.addEventListener('click', () => {
-  path = b.dataset.path;
-  for (const x of $('#path').children) x.setAttribute('aria-pressed', x === b);
-  $('#picks').hidden = path !== 'mitm';
-});
+setScen();
 
 function setScore(score) {
   $('#t-score').textContent = sgn(score);
   $('#t-score').style.color = score >= params.upper ? 'var(--alert)' : score <= params.lower ? 'var(--clear)' : '';
   $('#t-needle').style.left = pos(score) + '%';
 }
-// Every TRW test of the run is one line: a verdict ends a test and the next site starts a new one from 0.
-function drawChart(t) {
-  const series = [];
-  let pts = [[0, 0, '']];
-  for (const e of t.events) {
-    if (!e.known) continue;
-    pts.push([e.i, e.score, e.checks.A || e.checks.B || e.checks.D ? 'mismatch' : 'match']);
-    if (e.decision !== 'pending') { series.push(pts); pts = [[e.i, 0, '']]; }
-  }
-  if (pts.length > 1) series.push(pts);
-  walkChart($('#t-chart'), series.map((p, k) => ({ name: `Test ${k + 1}`, color: 'var(--tuned)', pts: p })),
-    { ...t.params, xlabel: 'handshake', xmax: Math.max(6, sites.length) });
-}
 // The verdict to show: an alert wins over a clear, else the first verdict, else none.
 const verdictOf = t => t.events.find(e => e.decision === 'alert') ?? t.events.find(e => e.known && e.decision !== 'pending');
+// One line: the TRW test that gave the verdict (a verdict ends a test; the next site starts a new one), else the open test.
+function drawChart(t) {
+  const v = verdictOf(t), tests = [[]];
+  for (const e of t.events) {
+    if (!e.known) continue;
+    tests.at(-1).push(e);
+    if (e.decision !== 'pending') tests.push([]);
+  }
+  const shown = v ? tests.find(x => x.includes(v)) : tests.at(-1);
+  const pts = [[0, 0, ''], ...shown.map(e => [e.sites, e.score, e.checks.A || e.checks.B || e.checks.D ? 'mismatch' : 'match'])];
+  walkChart($('#t-chart'), [{ name: 'Tuned method', color: 'var(--tuned)', pts }], { ...t.params, xmax: Math.max(6, sites.length) });
+  $('#t-chart-sub').textContent = tests.filter(x => x.length).length > 1
+    ? 'The test that gave the verdict. Filled dot: the site changed. Open dot: the site is the same.'
+    : 'Filled dot: the site changed. Open dot: the site is the same.';
+}
 const stepCell = e => !e.obs ? '<span class="muted">no handshake</span>' : !e.known ? '<span class="muted">not learned</span>' : `<span class="mono">${sgn(e.delta)}</span>`;
 const scoreCell = e => e.known ? `<span class="mono">${sgn(e.score)}</span>${e.decision !== 'pending' ? ` <span class="pill ${e.decision}">${e.decision === 'alert' ? 'Alert' : 'Clear'}</span>` : ''}` : '';
 
 $('#test-run').addEventListener('click', async () => {
   if (running || !ready) return;
-  const intercept = picked(), t0 = performance.now();
-  if (path === 'mitm' && !intercept.length) { $('#t-foot').textContent = 'Tick at least one site, or choose Direct.'; return; }
+  const changes = plan(), t0 = performance.now();
   busy(true);
   resetTest();
   $('#t-decision').textContent = 'Testing';
   $('#t-foot').textContent = 'Connecting to the VM…';
-  const t = (lastTest = { events: [], params, via: new Set() });
+  const t = (lastTest = { events: [], params, changes });
   const paint = () => {
     $('#test-rows').innerHTML = sites.map((s, i) => {
       const e = t.events[i], now = i === t.events.length;
       return `<tr data-site="${esc(s.host)}" class="${now ? 'sel' : ''}"><td class="num-c mono muted">${i + 1}</td><td>${esc(s.host)}</td>
-        <td>${t.via.has(s.host) ? '<span class="pill alert">mitmproxy</span>' : '<span class="pill none">direct</span>'}</td>
+        <td>${changeCell(t.changes[s.host])}</td>
         <td>${e?.known ? chips(e.checks) : ''}</td><td class="num-c">${e ? stepCell(e) : now ? '<span class="muted">Visiting…</span>' : ''}</td>
         <td class="num-c">${e ? scoreCell(e) : ''}</td></tr>`;
     }).join('');
   };
   try {
-    await stream({ action: 'test', vm, intercept }, e => {
+    await stream({ action: 'test', vm, changes }, e => {
       if (e.type === 'start') {
         t.params = e.params;
-        t.via = new Set(e.intercepted);
+        t.changes = e.changes;
         setScore(0);
         $('#t-n').innerHTML = `0<small>of ${e.total}</small>`;
         bar('#t-bar', 0, e.total);
-        const extra = e.intercepted.filter(h => !intercept.includes(h));
+        const extra = Object.keys(e.changes).filter(h => e.changes[h] !== 'none' && !changes[h]);
         $('#t-foot').textContent = `Test ${e.run}. Visiting ${sites[0].host}…`;
-        if (extra.length) $('#t-dec-foot').textContent = `${extra.join(', ')} also goes through mitmproxy: same IPv4 address as a ticked site.`;
+        if (extra.length) $('#t-dec-foot').textContent = `${extra.join(', ')} also changed: same IPv4 address as a changed site.`;
         paint();
         drawChart(t);
       } else if (e.type === 'handshake') {

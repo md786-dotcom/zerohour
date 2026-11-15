@@ -10,7 +10,7 @@ import { SNAPSHOT } from './snapshot.js';
 
 const P = METHODS.tuned;
 export const MIN_SITES = P.min_sites, MAX_SITES = 8, CLIENT = '10.9.0.2';
-const TAG = { app: 'zerohour-live' }, MAX_VMS = 4;  // the page is public: cap the VMs that run at one time
+const TAG = { app: 'zerohour-live' }, MAX_VMS = 4, KINDS = ['route', 'tls', 'both', 'mitm'];  // the page is public: cap the VMs that run at one time
 const SCRIPT = readFileSync(new URL('./capture.sh', import.meta.url));
 const OUT = '/vercel/sandbox/out';
 hash('', 0, '');  // a running sensor is warm: compile BLAKE2b once here, not inside the first timed handshake
@@ -80,12 +80,12 @@ export async function stopVm(name) {
 
 // One HTTPS visit per site while tcpdump records <pcap>. Yields each visit with the handshake the C++ sensor parsed
 // for it (null when the site gave none).
-async function* visits(sb, sites, pcap) {
+async function* visits(sb, sites, pcap, tls12 = new Set()) {
   await sh(sb, ['start', `${OUT}/${pcap}`]);
   try {
     for (const s of sites) {
       if (!s.ip) { yield { host: s.host, code: 0, obs: null }; continue; }
-      const out = await sh(sb, ['visit', s.host, `${OUT}/${pcap}`]), nl = out.indexOf('\n');
+      const out = await sh(sb, ['visit', s.host, `${OUT}/${pcap}`, ...(tls12.has(s.host) ? ['tls12'] : [])]), nl = out.indexOf('\n');
       const all = JSON.parse(out.slice(nl + 1));
       yield { host: s.host, ip: s.ip, code: Number(out.slice(0, nl)), obs: all.findLast(o => o.site === s.host) ?? null };
     }
@@ -130,10 +130,12 @@ export async function* learn(list, oldVm) {
   }
 }
 
-// Step 2: the client visits every site again. Sites in `intercept` go through mitmproxy on the gateway (sites with
-// the same IPv4 address go together). Each handshake is checked against the baseline and moves the tuned TRW score.
+// Step 2: the client visits every site again. `changes` maps a site to what is different on this visit:
+//   route: replies take 3 more routers (a normal route change, check D)   tls: the server answers with other TLS settings
+//   both: route and tls                                                    mitm: the site goes through mitmproxy
+// Route and mitmproxy act on the IPv4 address, so sites with the same address change together. Each handshake is checked against the baseline and moves the tuned TRW score.
 // Notices and verdicts go to the VM's log; the log is saved on every way out, so a verdict the page saw is never lost.
-export async function* test(name, intercept) {
+export async function* test(name, changes) {
   const sb = await openVm(name);
   // A VM that stopped is resumed by the SDK as an empty new session: it has no capture.sh. Stop that one at once.
   if (!(await sb.readFileToBuffer({ path: '/vercel/sandbox/capture.sh' }).catch(() => null))) {
@@ -147,18 +149,23 @@ export async function* test(name, intercept) {
     const [sites, learned, records, runs] = await Promise.all([readJson(sb, 'sites.json', []), readJson(sb, 'learn.json', null),
       readJson(sb, 'chain.json', []), readJson(sb, 'runs.json', 0)]);
     if (!learned) throw new Error('Do step 1 (Learn) first.');
-    const want = new Set(Array.isArray(intercept) ? intercept.map(String) : []);
-    const via = new Set(sites.filter(s => s.ip && want.has(s.host)).map(s => s.ip));
+    const kind = h => { const k = changes && typeof changes === 'object' ? changes[h] : null; return KINDS.includes(k) ? k : null; };
+    const via = new Set(sites.filter(s => s.ip && kind(s.host) === 'mitm').map(s => s.ip));
+    const hops = new Set(sites.filter(s => s.ip && /route|both/.test(kind(s.host)) && !via.has(s.ip)).map(s => s.ip));
+    const tls12 = new Set(sites.filter(s => /tls|both/.test(kind(s.host)) && !via.has(s.ip)).map(s => s.host));
+    const actual = Object.fromEntries(sites.map(s => [s.host, via.has(s.ip) ? 'mitm'
+      : hops.has(s.ip) && tls12.has(s.host) ? 'both' : hops.has(s.ip) ? 'route' : tls12.has(s.host) ? 'tls' : 'none']));
     await sh(sb, ['route', ...via]);
+    await sh(sb, ['hops', ...hops]);
     const run = runs + 1, pcap = `test-${run}.pcap`, base = new Baseline(), trw = new Trw(P), lat = [], decisions = [];
     learned.forEach(o => base.learn(o));
     chain = new Chain();
     chain.records = records;
     await writeJson(sb, 'runs.json', run);
-    yield { type: 'start', run, total: sites.length, intercepted: sites.filter(s => via.has(s.ip)).map(s => s.host), params: trw.params() };
+    yield { type: 'start', run, total: sites.length, changes: actual, params: trw.params() };
     let i = 0;
-    for await (const v of visits(sb, sites, pcap)) {
-      const ev = { type: 'handshake', i: ++i, total: sites.length, host: v.host, code: v.code, intercepted: via.has(v.ip), obs: v.obs };
+    for await (const v of visits(sb, sites, pcap, tls12)) {
+      const ev = { type: 'handshake', i: ++i, total: sites.length, host: v.host, code: v.code, change: actual[v.host], obs: v.obs };
       if (v.obs) {
         // Timed: check against the baseline, TRW step, and the log record in memory. The C++ parse in the VM is not in it.
         const o = v.obs, t0 = process.hrtime.bigint(), c = base.check(o, P.ttl_delta);

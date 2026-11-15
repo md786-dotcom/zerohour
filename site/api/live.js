@@ -2,7 +2,7 @@ import { learn, test, stopVm } from '../lib/live.js';
 
 // POST /api/live, one JSON body per step of the live page:
 //   {action: "learn", sites: ["example.com", "1.1.1.1", ...], vm?}  new VM, one visit per site -> the baseline
-//   {action: "test", vm, intercept: ["example.com", ...]}             visit again; listed sites go through mitmproxy
+//   {action: "test", vm, changes: {"example.com": "mitm", ...}}      visit again; route|tls|both|mitm per site
 //   {action: "stop", vm}                                              stop the VM
 // learn and test stream one JSON line per event (application/x-ndjson), so the page shows each handshake as it lands.
 export default async function handler(req, res) {
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     await stopVm(b.vm).catch(() => {});
     return res.status(204).end();
   }
-  const steps = b.action === 'learn' ? learn(b.sites, b.vm) : b.action === 'test' ? test(b.vm, b.intercept) : null;
+  const steps = b.action === 'learn' ? learn(b.sites, b.vm) : b.action === 'test' ? test(b.vm, b.changes) : null;
   if (!steps) return res.status(400).json({ error: 'action must be learn, test or stop' });
   // The page closed or reloaded: end the generator, so its finally blocks stop the new VM or unlock the VM and save its log.
   let gone = false;

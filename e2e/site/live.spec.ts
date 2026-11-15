@@ -1,8 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-// The live page on real traffic: one VM, step 1 learns 5 real sites, then three tests on the same baseline:
-// direct, one site through mitmproxy (one change), all sites through mitmproxy (many changes). Then the VM's log.
+// The live page on real traffic: one VM, step 1 learns 5 real sites, then five tests on the same baseline:
+// direct normal / one change / many changes, mitmproxy one change / attack. Then the VM's log.
 // The sites are real, so only the shape of each result is fixed. The PCAPs and screenshots are the run's artifacts.
 
 async function fitsOneScreen(page: Page, name: string) {
@@ -24,7 +24,7 @@ async function runTest(page: Page) {
   await expect(page.getByTestId('t-n')).toHaveText('5of 5');
 }
 
-test('live page: learn, then test direct, one change, many changes; the log verifies', async ({ page }) => {
+test('live page: learn, then the direct and mitmproxy scenarios; the log verifies', async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto('/live');
 
@@ -39,36 +39,55 @@ test('live page: learn, then test direct, one change, many changes; the log veri
     await fitsOneScreen(page, 'live-learn');
   });
 
-  await test.step('step 2a: direct, no alert', async () => {
-    await page.getByTestId('to-test').click();
+  const scenario = async (pathLabel: string, scen: string) => {
+    await page.getByRole('button', { name: pathLabel, exact: true }).click();
+    await page.locator('#scen button', { hasText: scen }).click();
     await runTest(page);
-    await expect(page.locator('#test-rows .pill', { hasText: 'mitmproxy' })).toHaveCount(0);
+  };
+  const changed = (label: string) => page.locator('#test-rows .pill', { hasText: label });
+
+  await test.step('direct, normal: no site changed, no alert', async () => {
+    await page.getByTestId('to-test').click();
+    await scenario('Direct', 'Normal');
+    await expect(changed('same as step 1')).toHaveCount(5);
     await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
     await expect(page.getByTestId('t-time')).toHaveText(/ms$/);
     expect(parseFloat(await page.getByTestId('t-time').innerText())).toBeLessThan(4);  // engine-only p99, under the 4 ms budget
     await savePcap(page, '#test-dl', 'artifacts/live-test-direct.pcap');
-    await fitsOneScreen(page, 'live-test-direct');
+    await fitsOneScreen(page, 'live-direct-normal');
   });
 
-  await test.step('step 2b: one site through mitmproxy, one change, no alert', async () => {
-    await page.getByRole('button', { name: 'Through mitmproxy' }).click();
-    for (const host of ['example.com', 'wikipedia.org', 'cloudflare.com', '1.1.1.1']) await page.locator(`.pick[data-host="${host}"]`).click();
-    await runTest(page);
-    await expect(page.locator('#test-rows .pill', { hasText: 'mitmproxy' })).toHaveCount(1);
-    await expect(page.locator('#test-rows tr[data-site="github.com"] .chip.bad')).not.toHaveCount(0);  // the one change is seen
+  await test.step('direct, one change: a new route on one site is seen (D), no alert', async () => {
+    await scenario('Direct', 'One change');
+    await expect(changed('new route')).toHaveCount(1);
+    await expect(page.locator('#test-rows tr', { hasText: 'new route' }).locator('.chip.bad', { hasText: 'D' })).toHaveCount(1);
     await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
-    await fitsOneScreen(page, 'live-test-one');
+    await fitsOneScreen(page, 'live-direct-one');
   });
 
-  await test.step('step 2c: all sites through mitmproxy, many changes, alert after 3 sites', async () => {
-    for (const host of ['example.com', 'wikipedia.org', 'cloudflare.com', '1.1.1.1']) await page.locator(`.pick[data-host="${host}"]`).click();
-    await runTest(page);
-    await expect(page.locator('#test-rows .pill', { hasText: 'mitmproxy' })).toHaveCount(5);
+  await test.step('direct, many changes: four normal changes, the tuned method does not alert', async () => {
+    await scenario('Direct', 'Many changes');
+    await expect(page.locator('#test-rows .pill', { hasText: /new route|new TLS/ })).toHaveCount(4);
+    await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
+    await expect(page.locator('#t-chart path')).toHaveCount(1);  // one score line
+    await fitsOneScreen(page, 'live-direct-many');
+  });
+
+  await test.step('mitmproxy, one change: one site intercepted, no alert', async () => {
+    await scenario('Through mitmproxy', 'One change');
+    await expect(changed('mitmproxy')).toHaveCount(1);
+    await expect(page.getByTestId('t-decision')).not.toHaveText('Alert');
+  });
+
+  await test.step('mitmproxy, attack: every site intercepted, alert after 3 sites', async () => {
+    await scenario('Through mitmproxy', 'Attack');
+    await expect(changed('mitmproxy')).toHaveCount(5);
     await expect(page.getByTestId('t-decision')).toHaveText('Alert');
     await expect(page.locator('#t-dec-foot')).toHaveText(/^Alert after 3 sites \(handshake 3\)/);
     expect(parseFloat(await page.getByTestId('t-score').innerText())).toBeGreaterThan(4.6);
+    await expect(page.locator('#t-chart path')).toHaveCount(1);
     await savePcap(page, '#test-dl', 'artifacts/live-test-mitm.pcap');
-    await fitsOneScreen(page, 'live-test-many');
+    await fitsOneScreen(page, 'live-mitm-attack');
   });
 
   await test.step('evidence log of the VM: verify, then a changed record is found', async () => {
@@ -81,6 +100,7 @@ test('live page: learn, then test direct, one change, many changes; the log veri
     await page.getByTestId('tamper').click();
     await expect(page.getByTestId('verify-result')).toContainText('is incorrect', { timeout: 60_000 });
   });
+  await page.goto('/');  // pagehide: the page asks the server to stop its VM
 });
 
 test('live page: fewer than 3 sites is refused', async ({ page }) => {
