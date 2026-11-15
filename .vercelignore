@@ -1,0 +1,5 @@
+# Root Directory is site/: upload only what the site needs.
+/*
+!/site
+/site/test
+/site/scripts
