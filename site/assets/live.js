@@ -253,9 +253,11 @@ $('#test-run').addEventListener('click', async () => {
         paint();
         drawChart(t);
       } else if (e.type === 'done') {
-        if (!e.decisions.length) {
-          $('#t-decision').textContent = 'No decision';
-          $('#t-dec-foot').textContent = `Score ${sgn(t.events.findLast(x => x.known)?.score ?? 0)}. More sites are necessary.`;
+        if (!e.decisions.length) {  // the run ended under the alert threshold: no alert, so the page shows Clear
+          const last = t.events.findLast(x => x.known)?.score ?? 0;
+          $('#t-decision').textContent = 'Clear';
+          $('#t-dec-foot').textContent = `No alert: the score ${sgn(last)} stayed under the alert threshold ${sgn(t.params.upper)}.`;
+          for (const id of ['#t-dec-card', '#t-score-card']) $(id).classList.add('good');
         }
         const m = e.timing;
         if (m.n) {
