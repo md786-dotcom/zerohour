@@ -30,7 +30,7 @@
   <!-- Live replay -->
   <section class="panel" data-panel="live" role="tabpanel">
     <div class="head">
-      <div><h1>Live replay</h1><p>The sensor reads a recorded capture of 8 clients, one handshake at a time. Two of the clients are behind an interceptor.</p></div>
+      <div><h1>Live replay</h1><p>The sensor reads a recorded capture of 8 clients and 16 sites, one handshake at a time. Two of the clients are behind an interceptor.</p></div>
       <div class="controls">
         <div class="seg" role="group" aria-label="Method" id="method">
           <button aria-pressed="true" data-method="tuned">Tuned</button><button aria-pressed="false" data-method="plan">Plan</button>
@@ -40,12 +40,12 @@
         <button class="btn" id="reset" data-testid="reset"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6a3.5 3.5 0 1 0 1-2.5M2.5 1.5v2.5H5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>Reset</button>
       </div>
     </div>
-    <div class="progress"><span id="prog-text" data-testid="progress">0 of 64 handshakes</span><div class="track"><span id="prog"></span></div><span id="state-text">Stopped</span></div>
+    <div class="progress"><span id="prog-text" data-testid="progress">0 of 128 handshakes</span><div class="track"><span id="prog"></span></div><span id="state-text">Stopped</span></div>
     <div class="row kpis">
-      <div class="card kpi"><div class="label">Handshakes read</div><div class="num" id="k-n">0</div><div class="foot">From busy.pcap: 8 clients, 8 sites each</div></div>
+      <div class="card kpi"><div class="label">Handshakes read</div><div class="num" id="k-n">0</div><div class="foot">From busy.pcap: 8 clients, 16 sites each</div></div>
       <div class="card kpi"><div class="label">Interceptors found</div><div class="num" id="k-caught" data-testid="k-caught">0<small>of 2</small></div><div class="foot" id="k-caught-foot">The sensor needs 3 changed sites</div></div>
       <div class="card kpi"><div class="label">False alerts</div><div class="num" id="k-fp" data-testid="k-fp">0</div><div class="foot" id="k-fp-foot">&nbsp;</div></div>
-      <div class="card kpi"><div class="label">Detection time, p99</div><div class="num" id="k-time">—</div><div class="foot" id="k-time-foot">Budget 4 ms, measured in the C++ sensor</div></div>
+      <div class="card kpi"><div class="label">Detection time, mean</div><div class="num" id="k-time" data-testid="k-time">—</div><div class="foot" id="k-time-foot">Push Run. The time is averaged as the handshakes come in.</div></div>
     </div>
     <div class="row main2">
       <div class="card"><div class="top"><div><h2>Clients</h2><p class="sub">A red tile is an alert. The label "Interceptor" marks the two clients that the lab put behind an interceptor.</p></div></div>
@@ -94,7 +94,7 @@
   <!-- Evidence log -->
   <section class="panel" data-panel="log" role="tabpanel" hidden>
     <div class="head">
-      <div><h1>Evidence log</h1><p>The sensor writes each notice and verdict to a log. Each record contains the hash of the record before it.</p></div>
+      <div><h1>Evidence log</h1><p>The sensor writes each notice and verdict to a log. Each record contains the BLAKE2b-256 hash of the record before it.</p></div>
       <div class="controls">
         <button class="btn primary" id="verify" data-testid="verify">Verify the log</button>
         <button class="btn" id="tamper" data-testid="tamper">Change one record</button>
@@ -102,7 +102,7 @@
     </div>
     <div class="card" style="flex:1"><div class="top"><div><h2 id="log-title">Last 10 records</h2><p class="sub" id="log-sub">Run the live replay to fill the log.</p></div>
       <span id="verify-result" data-testid="verify-result" aria-live="polite"></span></div>
-      <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Record</th><th>Hash of the record before</th><th>Hash</th></tr></thead><tbody id="log"></tbody></table></div></div>
+      <div class="scroll"><table><thead><tr><th class="num-c">#</th><th>Record</th><th>Hash of the record before</th><th>Stored hash</th><th>BLAKE2b-256 check</th></tr></thead><tbody id="log"></tbody></table></div></div>
   </section>
 </main>
 <script type="module" src="/assets/demo.js"></script>

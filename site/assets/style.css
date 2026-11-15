@@ -122,6 +122,7 @@ thead th { position: sticky; top: 0; background: var(--card); color: var(--muted
 tbody tr:last-child td { border-bottom: 0; }
 .num-c { text-align: right; }
 tr.sel td { background: rgb(0 113 227 / .07); }
+tr.edited td { background: var(--alert-bg); }
 td.forged { color: var(--alert); font-weight: 600; }
 
 /* charts */
@@ -152,6 +153,12 @@ td.forged { color: var(--alert); font-weight: 600; }
 .badge { display: inline-block; margin-top: 10px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 980px; }
 .badge.pass { color: var(--clear); background: var(--clear-bg); } .badge.fail { color: var(--alert); background: var(--alert-bg); }
 
+.formula-card .eq { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; align-items: baseline; padding: 12px 14px; border-radius: 12px;
+  background: var(--fill); font: 13.5px/1.5 var(--mono); letter-spacing: 0; margin-bottom: 10px; }
+.formula-card .eq .when { font: 500 12px var(--sans); color: var(--muted); }
+.formula-card.before .eq b { color: var(--plan); } .formula-card.after .eq b { color: var(--tuned); }
+.formula-card.before { box-shadow: var(--shadow), inset 3px 0 0 var(--plan); } .formula-card.after { box-shadow: var(--shadow), inset 3px 0 0 var(--tuned); }
+.vs.compact .big { font-size: 40px; }
 pre.tree { margin: 0; padding: 14px 16px; background: var(--fill); border-radius: 12px; overflow: auto; flex: 1; min-height: 0; font: 11.5px/1.6 var(--mono);
   color: var(--text-2); }
 pre.tree mark { background: var(--alert-bg); color: var(--alert); border-radius: 4px; padding: 0 3px; font-weight: 600; }

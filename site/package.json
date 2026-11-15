@@ -2,6 +2,13 @@
   "name": "zerohour-site",
   "private": true,
   "type": "module",
-  "engines": { "node": "22.x" },
-  "scripts": { "test": "cd .. && node site/test/parity.mjs" }
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test": "cd .. && node site/test/parity.mjs"
+  },
+  "dependencies": {
+    "blakejs": "1.2.1"
+  }
 }

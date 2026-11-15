@@ -82,5 +82,5 @@ hoverTip($('#c-fp'));
 hoverTip($('#c-sites'));
 hoverTip($('#weights'));
 show(location.hash.slice(1));
-Promise.all([api('/api/tune'), api('/api/replay?n=64')]).then(([t, r]) => { T = t; real = { ...r.compare, clean: r.clients.length - r.intercepted.length }; draw(); });
+Promise.all([api('/api/tune'), api('/api/replay?n=128')]).then(([t, r]) => { T = t; real = { ...r.compare, clean: r.clients.length - r.intercepted.length }; draw(); });
 addEventListener('resize', () => T && draw());

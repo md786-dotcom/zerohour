@@ -1,5 +1,5 @@
 #!/bin/sh
-# Lab PKI for zh_lab: Lab CA + site1..8.lab, a renewed site3 key, and the Interceptor CA with forged certs.
+# Lab PKI for zh_lab: Lab CA + site1..16.lab, a renewed key per site, and the Interceptor CA with forged certs.
 # Idempotent: only missing files are made, so keys stay stable and a learned baseline stays valid.
 set -e
 out=$1
@@ -19,7 +19,7 @@ leaf() {  # file host ca-file   (new key every time)
 
 [ -f lab-ca.crt ] || ca lab-ca "Lab CA"
 [ -f int-ca.crt ] || ca int-ca "Interceptor CA"
-for n in 1 2 3 4 5 6 7 8; do
+for n in $(seq 1 16); do
   [ -f "site$n.crt" ] || leaf "site$n" "site$n.lab" lab-ca
   [ -f "int-site$n.crt" ] || leaf "int-site$n" "site$n.lab" int-ca
   [ -f "site$n-renewed.crt" ] || leaf "site$n-renewed" "site$n.lab" lab-ca  # busy.pcap renews any site

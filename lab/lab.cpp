@@ -1,5 +1,5 @@
 // zh_lab <certsdir> <outdir>: real TLS 1.2 handshakes run in-process through OpenSSL memory BIOs,
-// written as Ethernet/IPv4/TCP packets to learn/normal/onechange/attack/multichange/busy.pcap plus manifest.txt.
+// written as Ethernet/IPv4/TCP packets to learn/normal/onechange/attack/multichange/busylearn/busy.pcap + manifest.txt.
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -244,29 +244,36 @@ int main(int argc, char** argv) {
         pcap_dump_close(out);
         pcap_close(dead);
     }
-    // busy: 8 clients each visit all 8 sites in their own order, interleaved in time (64 connections). Normal changes
-    // at random: new server stack (A) 10%, renewed certificate (B) 8%, route change (D) 12%. Clients 3 and 6
-    // (10.0.1.13, 10.0.1.16) sit behind the interceptor. Used by `zerohour bench` as a realistic mix of quiet, logged and alerting handshakes.
-    {
-        const std::string path = outdir + "/busy.pcap";
+    // busylearn: one clean visit to each of 16 sites (the baseline for busy). busy: 8 clients each visit all 16 sites
+    // in their own order, interleaved in time (128 connections). Change rates are the simulation's "normal traffic"
+    // (site/lib/sim.js): 3% of sites move provider (all checks change), else new server stack (A) 10%, renewed
+    // certificate (B) 5%, route change (D) 12%. Clients 3 and 6 (10.0.1.13, 10.0.1.16) sit behind the interceptor,
+    // which lets 25% of sites bypass it.
+    const auto origin_a = [](int site) { return (site - 1) % 8 < 4; };
+    const auto base_ttl = [&](int site) { return origin_a(site) ? 52 : 116; };
+    for (const char* scen : {"busylearn", "busy"}) {
+        const bool learn = std::string(scen) == "busylearn";
+        const std::string path = outdir + "/" + scen + ".pcap";
         pcap_t* dead = pcap_open_dead(DLT_EN10MB, 65535);
         pcap_dumper_t* out = pcap_dump_open(dead, path.c_str());
         if (!out) die(path + ": " + pcap_geterr(dead));
         uint32_t seed = 2026;
         auto r = [&] { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.0; };
-        for (int i = 0; i < 64; ++i) {
-            const int cl = i % 8, site = (cl * 3 + i / 8 * 5) % 8 + 1;  // 5 is coprime to 8: every site once
-            const bool attack = cl == 2 || cl == 5;
-            const bool a = !attack && r() < 0.10, b = !attack && r() < 0.08, d = !attack && r() < 0.12;
-            const bool origin_a = (site <= 4) != a;  // a new server stack: the other origin profile
-            const Profile& prof = attack ? kInterceptor : origin_a ? kOriginA : kOriginB;
-            const std::string n = std::to_string(site), host = "site" + n + ".lab";
-            const std::string file = attack ? "int-site" + n : b ? "site" + n + "-renewed" : "site" + n;
-            const int ttl = attack ? 63 : (site <= 4 ? 52 : 116) + int(r() * 3) - 1 + (d ? 7 : 0);
-            Flow f{out, 93u << 24 | 184u << 16 | 216u << 8 | (10u + site), uint16_t(41000 + i), ttl, 1700001000L + i,
-                   0x30000000u + i * 0x10000u, 0x40000000u + i * 0x10000u};
-            f.cip = 10u << 24 | 1u << 8 | (11u + cl);  // 10.0.1.11 .. 10.0.1.18
-            connection(f, cctx, prof, certs, file, host, manifest, "busy");
+        const int n = learn ? 16 : 128;
+        for (int i = 0; i < n; ++i) {
+            const int cl = learn ? 0 : i % 8, site = learn ? i + 1 : (cl * 3 + i / 8 * 5) % 16 + 1;  // 5 coprime to 16
+            const bool attack = !learn && (cl == 2 || cl == 5) && r() >= 0.25;
+            const bool migrate = !learn && !attack && r() < 0.03;
+            const bool a = migrate || (!learn && !attack && r() < 0.10), b = migrate || (!learn && !attack && r() < 0.05),
+                       d = migrate || (!learn && !attack && r() < 0.12);
+            const Profile& prof = attack ? kInterceptor : origin_a(site) != a ? kOriginA : kOriginB;
+            const std::string sn = std::to_string(site), host = "site" + sn + ".lab";
+            const std::string file = attack ? "int-site" + sn : b ? "site" + sn + "-renewed" : "site" + sn;
+            const int ttl = attack ? 63 : base_ttl(site) + (learn ? site % 3 - 1 : int(r() * 3) - 1) + (d ? 7 : 0);
+            Flow f{out, 93u << 24 | 184u << 16 | 216u << 8 | (10u + site), uint16_t(42000 + (learn ? 200 : 0) + i), ttl,
+                   1700002000L + (learn ? 0 : 100) + i, 0x50000000u + i * 0x10000u, 0x60000000u + i * 0x10000u};
+            f.cip = learn ? kClientIp : 10u << 24 | 1u << 8 | (11u + cl);  // busy clients 10.0.1.11 .. 10.0.1.18
+            connection(f, cctx, prof, certs, file, host, manifest, scen);
         }
         pcap_dump_close(out);
         pcap_close(dead);

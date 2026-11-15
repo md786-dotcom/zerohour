@@ -15,8 +15,8 @@ for (const b of $('#tabs').children) b.addEventListener('click', () => show(b.da
 const press = (group, attr, v) => { for (const b of $(group).children) if (b.dataset[attr] !== undefined) b.setAttribute('aria-pressed', b.dataset[attr] === v); };
 
 // ---------------------------------------------------------------- live replay of busy.pcap
-const TOTAL = 64, STEP = 2, TICK = 250;
-let n = 0, method = 'tuned', running = false, timer = 0, R = null, bench = null, prevTop = '', gen = 0;
+const TOTAL = 128, STEP = 4, TICK = 200;
+let n = 0, method = 'tuned', running = false, timer = 0, R = null, prevTop = '', gen = 0, logView = null;
 
 // Shows the state after `k` handshakes. A response that arrives after Stop, Reset or a newer request is dropped.
 async function load(k = n) {
@@ -24,6 +24,7 @@ async function load(k = n) {
   if (g !== gen) return false;
   n = k;
   R = r;
+  logView = null;
   render();
   return true;
 }
@@ -40,12 +41,15 @@ function render() {
   kfp.classList.toggle('bad', c.false_alerts > 0);
   kfp.classList.toggle('good', c.false_alerts === 0 && R.n > 0);
   $('#k-fp-foot').textContent = `Of ${R.clients.length - R.intercepted.length} clean clients. The ${other} method: ${R.compare[other].false_alerts}`;
-  if (bench) {
-    const b = bench[method === 'tuned' ? 'after' : 'before'].find(x => x.pcap.includes('busy'));
-    $('#k-time').innerHTML = `${(b.total_p99_us / 1000).toFixed(2)}<small>ms</small>`;
-    $('#k-time').closest('.kpi').classList.toggle('bad', b.total_p99_us > 4000);
-    $('#k-time-foot').textContent = `Budget 4 ms. ${b.total_p99_us > 4000 ? 'Over budget.' : 'In budget.'} Measured in the C++ sensor.`;
+  const t = R.timing, kt = $('#k-time').closest('.kpi');
+  if (!t.n) {
+    $('#k-time').textContent = '—';
+    $('#k-time-foot').textContent = 'Push Run. The time is averaged as the handshakes come in.';
+  } else {
+    $('#k-time').innerHTML = `${(t.mean_us / 1000).toFixed(2)}<small>ms</small>`;
+    $('#k-time-foot').textContent = `C++ sensor on a real disk, ${t.n} handshakes. p99 ${(t.p99_us / 1000).toFixed(2)} ms, budget 4 ms. Flush: ${t.flush}.`;
   }
+  kt.classList.toggle('bad', t.n > 0 && t.p99_us > t.budget_us);
   $('#clients').innerHTML = R.clients.map(x => {
     const w = Math.min(1, Math.abs(x.score) / p.upper) * 50, col = x.score >= 0 ? 'var(--alert)' : 'var(--clear)';
     const label = { alert: 'Alert', clear: 'Clear', testing: x.sites ? `Testing, ${x.sites} sites` : 'Waiting' }[x.verdict];
@@ -82,27 +86,53 @@ for (const b of $('#method').children) b.addEventListener('click', async () => {
   await load();
 });
 
-// ---------------------------------------------------------------- evidence log (verify on the server)
-function renderLog() {
+// ---------------------------------------------------------------- evidence log: BLAKE2b-256 check on the server
+// logView: the records on screen (a copy, so "Change one record" can edit one). The server recomputes every hash;
+// the page then shows the result row by row.
+const PACE = 140;  // ms per row on screen, so the eye can follow; the server time is shown at the end
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function renderLog(status = {}) {
   if (!R) return;
-  $('#log-sub').textContent = R.log.records ? `${R.log.records} records after ${R.n} handshakes, ${method} method.` : 'Run the live replay to fill the log.';
-  $('#log').innerHTML = R.log.tail.slice().reverse().map(r => {
-    const j = JSON.parse(r.payload), kind = { notice: 'Notice', alert: 'Alert', clear: 'Clear' }[j.type] ?? j.type;
-    return `<tr><td class="num-c mono muted">${r.seq}</td><td><span class="pill ${j.type === 'notice' ? 'none' : j.type}">${kind}</span>
-      <span class="mono"> ${esc(j.client)}${j.site ? ' · ' + esc(j.site) : ''} · ${sgn(j.score)}</span></td>
-      <td class="mono muted">${r.prev.slice(0, 16)}…</td><td class="mono">${r.hash.slice(0, 16)}…</td></tr>`;
-  }).join('') || '<tr><td colspan="4" class="muted">No records yet.</td></tr>';
+  const recs = logView ?? R.log.tail;
+  $('#log-sub').textContent = R.log.records ? `${R.log.records} records after ${R.n} handshakes, ${method} method. The table shows the last 10.` : 'Run the live replay to fill the log.';
+  $('#log').innerHTML = recs.slice().reverse().map(r => {
+    let j = {};
+    try { j = JSON.parse(r.payload); } catch { /* an edited record may not be JSON */ }
+    const kind = { notice: 'Notice', alert: 'Alert', clear: 'Clear' }[j.type] ?? '?', st = status[r.seq];
+    const cell = !st ? '<span class="muted">—</span>' : st === 'run' ? '<span class="muted">Checking…</span>'
+      : st.ok ? '<span class="pill clear">✓ Hash matches</span>' : `<span class="pill alert">✗ Does not match</span> <span class="mono muted">${st.computed.slice(0, 10)}…</span>`;
+    return `<tr data-seq="${r.seq}" class="${r.edited ? 'edited' : ''}"><td class="num-c mono muted">${r.seq}</td>
+      <td><span class="pill ${j.type === 'notice' ? 'none' : j.type ?? 'none'}">${kind}</span><span class="mono"> ${esc(j.client ?? '')}${j.site ? ' · ' + esc(j.site) : ''} · ${j.score !== undefined ? sgn(j.score) : ''}</span>${r.edited ? ' <b style="color:var(--alert)">edited</b>' : ''}</td>
+      <td class="mono muted">${r.prev.slice(0, 14)}…</td><td class="mono">${r.hash.slice(0, 14)}…</td><td data-testid="check">${cell}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">No records yet.</td></tr>';
 }
 async function verify(edit) {
   if (!R?.log.tail.length) { $('#verify-result').textContent = 'Run the live replay first.'; return; }
-  const records = R.log.tail.map(r => ({ ...r }));
-  if (edit) {  // an attacker hides an alert: change one record, keep its old hash
-    const r = records[Math.floor(records.length / 2)];
+  for (const b of [$('#verify'), $('#tamper')]) b.disabled = true;
+  logView = R.log.tail.map(r => ({ ...r }));
+  if (edit) {  // an attacker hides an alert: rewrite one record, keep its old hash
+    const r = logView[Math.floor(logView.length / 2)];
     r.payload = r.payload.replace(/"type":"\w+"/, '"type":"clear"').replace(/"score":-?[\d.]+/, '"score":-5');
+    r.edited = true;
   }
-  const v = await api('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ records }) });
-  $('#verify-result').innerHTML = v.ok ? `<span class="pill clear">Log is correct: ${v.records} records checked</span>`
-    : `<span class="pill alert">Record ${v.bad_record} was changed</span>`;
+  const status = {};
+  renderLog(status);
+  $('#verify-result').innerHTML = '<span class="muted">The server computes the BLAKE2b-256 hash of each record…</span>';
+  try {
+    const v = await api('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ records: logView.map(({ seq, prev, payload, hash }) => ({ seq, prev, payload, hash })) }) });
+    for (const row of v.rows) {  // oldest first, as the chain is checked
+      status[row.seq] = 'run';
+      renderLog(status);
+      await sleep(PACE);
+      status[row.seq] = row;
+      renderLog(status);
+    }
+    const ms = v.rows.reduce((a, r) => a + r.us, 0) / 1000;
+    $('#verify-result').innerHTML = v.ok ? `<span class="pill clear">Log is correct: ${v.records} records, ${v.algorithm}, ${ms.toFixed(2)} ms on the server</span>`
+      : `<span class="pill alert">Record ${v.bad_record} is incorrect: its hash does not match</span>`;
+  } catch (e) { $('#verify-result').textContent = e.message; }
+  finally { for (const b of [$('#verify'), $('#tamper')]) b.disabled = false; }
 }
 $('#verify').addEventListener('click', () => verify(false));
 $('#tamper').addEventListener('click', () => verify(true));
@@ -161,6 +191,5 @@ async function capture(c) {
 for (const b of $('#captures').children) if (b.dataset.c) b.addEventListener('click', () => capture(b.dataset.c));
 
 // ---------------------------------------------------------------- start
-api('/data/bench.json').then(b => { bench = b; if (R) render(); }).catch(() => {});
 load().catch(e => ($('#state-text').textContent = `Error: ${e.message}`));
 show(location.hash.slice(1));

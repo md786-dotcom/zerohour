@@ -42,7 +42,7 @@ async function alerts(seed) {
   $('#rerun').disabled = true;
   $('#sim-meta').textContent = 'The server runs the tests…';
   try {
-    const [s, real] = await Promise.all([api(`/api/simulate?trials=100000&seed=${seed}`), api('/api/replay?n=64')]), R = s.results;
+    const [s, real] = await Promise.all([api(`/api/simulate?trials=100000&seed=${seed}`), api('/api/replay?n=128')]), R = s.results;
     vs($('#fp-vs'), rate(R.plan.nominal.alert_rate), rate(R.tuned.nominal.alert_rate), 'Plan method', 'Tuned method');
     const clean = real.clients.length - real.intercepted.length;
     vs($('#real-vs'), real.compare.plan.false_alerts, real.compare.tuned.false_alerts, 'Plan method', 'Tuned method');

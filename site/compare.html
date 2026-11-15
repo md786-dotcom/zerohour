@@ -40,8 +40,19 @@
     <div class="head"><div><h1>Fewer false alerts</h1><p>A false alert is an alert for a client without an interceptor. We count them in a real capture and in 100,000 simulated tests for each case.</p></div>
       <div class="controls"><span class="muted" id="sim-meta"></span><button class="btn" id="rerun" data-testid="rerun">Run again</button></div></div>
     <div class="row halves" style="flex:none">
-      <div class="card"><div class="top"><div><h2>Simulated tests, normal traffic</h2><p class="sub">Tests without an interceptor that end in an alert</p></div></div><div class="vs" id="fp-vs"></div></div>
-      <div class="card"><div class="top"><div><h2>Real capture busy.pcap</h2><p class="sub" id="real-sub">Clients with an alert, of the clients without an interceptor</p></div></div><div class="vs" id="real-vs"></div></div>
+      <div class="card formula-card before"><div class="top"><div><h2>Before: the paper's step</h2><p class="sub">One step for each site. All changes count the same.</p></div></div>
+        <div class="eq"><span class="when">A check fails</span><span>step = ln( (1 − θ₁) / (1 − θ₀) ) = <b>+2.08</b></span>
+          <span class="when">No check fails</span><span>step = ln( θ₁ / θ₀ ) = <b>−1.50</b></span></div>
+        <p class="note">A renewed certificate adds <b>+2.08</b>, the same as a forged certificate.</p></div>
+      <div class="card formula-card after"><div class="top"><div><h2>After: our step</h2><p class="sub">Each check has its own weight. The sum of one site has a cap.</p></div></div>
+        <div class="eq"><span class="when">Check fails</span><span>w = ln( p₁ / p₀ )</span>
+          <span class="when">Check holds</span><span>w = ln( (1 − p₁) / (1 − p₀) )</span>
+          <span class="when">One site</span><span>step = clip( w<sub>A</sub> + w<sub>B</sub> + w<sub>D</sub> , ±1.84 )</span></div>
+        <p class="note">A renewed certificate adds <b>+0.78</b>. A site where all three checks fail adds <b>+1.84</b>.</p></div>
+    </div>
+    <div class="row halves" style="flex:none">
+      <div class="card"><div class="top"><div><h2>Simulated tests, normal traffic</h2><p class="sub">Tests without an interceptor that end in an alert</p></div></div><div class="vs compact" id="fp-vs"></div></div>
+      <div class="card"><div class="top"><div><h2>Real capture busy.pcap</h2><p class="sub" id="real-sub">Clients with an alert, of the clients without an interceptor</p></div></div><div class="vs compact" id="real-vs"></div></div>
     </div>
     <div class="card" style="flex:1"><div class="top"><div><h2>All cases</h2><p class="sub" id="fp-model"></p></div></div>
       <div class="scroll"><table><thead><tr><th>Case</th><th>Interceptor</th><th class="num-c">Plan: alerts</th><th class="num-c">Tuned: alerts</th><th class="num-c">Plan: sites</th><th class="num-c">Tuned: sites</th></tr></thead><tbody id="fp-table"></tbody></table></div></div>

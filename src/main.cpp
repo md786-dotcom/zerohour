@@ -108,11 +108,18 @@ int main(int argc, char** argv) {
             const double p50p = pct(parse, .5), p99p = pct(parse, .99), p50d = pct(decide, .5), p99d = pct(decide, .99),
                          maxd = pct(decide, 1), total = p99p + p99d;
             if (json) {
+                // Per handshake, in capture order: median over the runs of (its decide time + the run's parse time per handshake).
+                std::string per;
+                for (size_t i = 0; i < n; i++) {
+                    std::vector<double> v;
+                    for (int r = 0; r < reps; r++) v.push_back(decide[r * n + i] + parse[r]);
+                    per += (i ? "," : "") + std::to_string(pct(v, .5));
+                }
                 std::printf("{\"pcap\":%s,\"handshakes\":%zu,\"reps\":%d,\"weighted\":%s,\"parse_us\":{\"p50\":%.2f,\"p99\":%.2f},"
                             "\"decide_us\":{\"p50\":%.2f,\"p99\":%.2f,\"max\":%.2f},\"total_p99_us\":%.2f,\"budget_us\":4000,\"log_sync\":%d,"
-                            "\"logged\":%.4f}\n",
+                            "\"logged\":%.4f,\"per_handshake_us\":[%s]}\n",
                             json_str(files[1]).c_str(), n, reps, cfg.trw.weighted ? "true" : "false", p50p, p99p, p50d, p99d,
-                            maxd, total, cfg.log_sync, double(logged) / decide.size());
+                            maxd, total, cfg.log_sync, double(logged) / decide.size(), per.c_str());
                 return 0;
             }
             std::printf("%s: %zu handshakes x %d runs, %s method, log_sync %d, %.0f%% of handshakes write a record\n",

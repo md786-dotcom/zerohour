@@ -13,12 +13,14 @@ async function fitsOneScreen(page: Page, name: string) {
 test('live replay: run, stop, reset; the tuned method alerts only on the two intercepted clients', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTestId('tile')).toHaveCount(8, { timeout: 20_000 });  // first call can hit a cold function
-  await expect(page.getByTestId('progress')).toHaveText('0 of 64 handshakes');
+  await expect(page.getByTestId('progress')).toHaveText('0 of 128 handshakes');
+  await expect(page.getByTestId('k-time')).toHaveText('—');  // nothing measured before Run
   await fitsOneScreen(page, 'live-start');
 
   await page.getByTestId('run').click();
   await expect(page.getByTestId('stop')).toBeEnabled();
-  await page.waitForTimeout(1500);
+  await expect(page.getByTestId('k-time')).toHaveText(/^\d+\.\d\dms$/, { timeout: 15_000 });  // measured while it runs
+  await page.waitForTimeout(800);
   await page.getByTestId('stop').click();
   const stopped = await page.getByTestId('progress').innerText();
   expect(parseInt(stopped)).toBeGreaterThan(0);
@@ -26,7 +28,7 @@ test('live replay: run, stop, reset; the tuned method alerts only on the two int
   await expect(page.getByTestId('progress')).toHaveText(stopped);  // Stop holds the replay
 
   await page.getByTestId('run').click();
-  await expect(page.getByTestId('progress')).toHaveText('64 of 64 handshakes', { timeout: 60_000 });
+  await expect(page.getByTestId('progress')).toHaveText('128 of 128 handshakes', { timeout: 90_000 });
   const alerts = page.locator('[data-testid=tile][data-verdict=alert]');
   await expect(alerts).toHaveCount(2);
   for (const ip of ['10.0.1.13', '10.0.1.16']) await expect(page.locator(`[data-testid=tile][data-ip="${ip}"]`)).toHaveAttribute('data-verdict', 'alert');
@@ -35,9 +37,10 @@ test('live replay: run, stop, reset; the tuned method alerts only on the two int
   await fitsOneScreen(page, 'live-done');
 
   await page.getByRole('button', { name: 'Plan', exact: true }).click();
-  await expect(page.getByTestId('k-fp')).toHaveText('0');  // the plan method on the same capture: also no false alert
+  await expect(page.getByTestId('k-fp')).toHaveText('1');  // the plan method on the same capture: one clean client alerted
   await page.getByTestId('reset').click();
-  await expect(page.getByTestId('progress')).toHaveText('0 of 64 handshakes');
+  await expect(page.getByTestId('progress')).toHaveText('0 of 128 handshakes');
+  await expect(page.getByTestId('k-time')).toHaveText('—');
 });
 
 test('lab scenarios: many normal changes clear with the tuned method; the attack alerts with both', async ({ page }) => {
@@ -60,14 +63,19 @@ test('wireshark: the forged issuer shows in the attack capture only', async ({ p
 test('evidence log: the server finds a changed record', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('run').click();
-  await expect(page.getByTestId('progress')).toHaveText(/^(1[2-9]|[2-6]\d) of 64/, { timeout: 30_000 });
+  await expect(page.getByTestId('progress')).toHaveText(/^([2-9]\d|1[0-2]\d) of 128/, { timeout: 40_000 });
   await page.getByTestId('stop').click();
   await page.getByRole('tab', { name: 'Evidence log' }).click();
   await page.getByTestId('verify').click();
-  await expect(page.getByTestId('verify-result')).toContainText('Log is correct');
+  await expect(page.getByTestId('verify-result')).toContainText('computes the BLAKE2b-256 hash');  // the check runs record by record
+  await expect(page.getByTestId('verify-result')).toContainText('Log is correct', { timeout: 15_000 });
+  await expect(page.getByTestId('check').filter({ hasText: 'Hash matches' })).toHaveCount(10);
   await fitsOneScreen(page, 'log');
   await page.getByTestId('tamper').click();
-  await expect(page.getByTestId('verify-result')).toContainText('was changed');
+  await expect(page.getByTestId('verify-result')).toContainText('is incorrect', { timeout: 15_000 });
+  await expect(page.locator('tr.edited [data-testid=check]')).toContainText('Does not match');
+  await expect(page.getByTestId('check').filter({ hasText: 'Does not match' })).toHaveCount(1);
+  await fitsOneScreen(page, 'log-tampered');
 });
 
 test('how we tuned it: four steps, each on one screen', async ({ page }) => {
@@ -92,6 +100,8 @@ test('before vs after opens in a new window; both constraints on one screen each
   await expect(cmp.locator('#rt-vs .before .badge')).toHaveText('Over budget');
   await fitsOneScreen(cmp, 'compare-runtime');
   await cmp.getByRole('tab', { name: /Fewer false alerts/ }).click();
+  await expect(cmp.locator('.formula-card.before')).toContainText('+2.08');
+  await expect(cmp.locator('.formula-card.after')).toContainText('clip');
   await expect(cmp.locator('#fp-table tr')).toHaveCount(4, { timeout: 60_000 });
   const before = parseFloat(await cmp.locator('#fp-vs .before .big').innerText()), after = parseFloat(await cmp.locator('#fp-vs .after .big').innerText());
   expect(after).toBeLessThan(before);

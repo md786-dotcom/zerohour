@@ -1,6 +1,7 @@
 // Decision engine of the zerohour sensor, ported 1:1 from src/trw.cpp and Baseline::check in src/sensor.cpp.
 // test/parity.mjs runs both on the lab PCAPs and fails on any difference in step, score or decision.
-import { createHash } from 'node:crypto';
+import blakejs from 'blakejs';
+const { blake2bHex } = blakejs;
 
 // zerohour.conf (plan, "before") and zerohour.tuned.conf ("after").
 export const PLAN = { theta0: 0.9, theta1: 0.2, alpha: 0.01, beta: 0.99, ttl_delta: 2, weighted: false,
@@ -84,28 +85,38 @@ export function runEvents(obs, baseline, p) {
   });
 }
 
-// Hash-chained log, same record layout as src/chainlog.cpp; SHA-256 here (node:crypto), BLAKE2b-256 in the C++ sensor.
+// Hash-chained log, same record layout and hash as src/chainlog.cpp: BLAKE2b-256 over "prev\tseq\tpayload".
+// test/parity.mjs writes a chain from this code and checks it with the C++ `zerohour verify`.
 const ZERO = '0'.repeat(64);
-const hash = (prev, seq, payload) => createHash('sha256').update(`${prev}\t${seq}\t${payload}`).digest('hex');
+export const hash = (prev, seq, payload) => blake2bHex(`${prev}\t${seq}\t${payload}`, null, 32);
 export class Chain {
   records = [];
   append(payload) {
     const prev = this.records.at(-1)?.hash ?? ZERO, seq = this.records.length + 1;
     const p = payload.replace(/[\t\n]/g, ' ');
-    this.records.push({ seq, prev, payload: p, hash: hash(prev, seq, p) });
+    const r = { seq, prev, payload: p, hash: hash(prev, seq, p) };
+    this.records.push(r);
+    return r;
   }
+  line(r) { return `${r.seq}\t${r.prev}\t${r.payload}\t${r.hash}\n`; }
 }
-// Verifies a run of consecutive records, anchored on the first record's prev hash (ZERO when it is record 1).
+
+// Checks a run of consecutive records, anchored on the first record's prev hash (ZERO when it is record 1).
+// Returns one result per record: does the stored link match, and does the BLAKE2b-256 hash match.
 export function verifyChain(records) {
-  if (!records.length) return { ok: true, records: 0, bad_record: 0, reason: '' };
-  let last = records[0].seq === 1 ? ZERO : records[0].prev;
+  const rows = [];
+  let last = records[0]?.seq === 1 ? ZERO : records[0]?.prev, bad = 0;
   for (const [i, r] of records.entries()) {
-    const bad = reason => ({ ok: false, records: records.length, bad_record: r.seq, reason });
-    if (typeof r.payload !== 'string' || r.seq !== records[0].seq + i || r.prev !== last) return bad('broken chain');
-    if (hash(r.prev, r.seq, r.payload) !== r.hash) return bad('hash mismatch');
+    const t0 = process.hrtime.bigint();
+    const linked = typeof r.payload === 'string' && r.seq === records[0].seq + i && r.prev === last;
+    const computed = linked ? hash(r.prev, r.seq, r.payload) : '';
+    const ok = linked && computed === r.hash;
+    rows.push({ seq: r.seq, ok, reason: ok ? '' : linked ? 'hash mismatch' : 'broken chain', computed, stored: r.hash,
+      us: Number(process.hrtime.bigint() - t0) / 1000 });
+    if (!ok && !bad) bad = r.seq;
     last = r.hash;
   }
-  return { ok: true, records: records.length, bad_record: 0, reason: '' };
+  return { ok: !bad, records: records.length, bad_record: bad, reason: rows.find(x => !x.ok)?.reason ?? '', algorithm: 'BLAKE2b-256', rows };
 }
 
 export const percentile = (v, q) => {

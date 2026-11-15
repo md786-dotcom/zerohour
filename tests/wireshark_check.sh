@@ -9,14 +9,15 @@ OUT=e2e/artifacts/wireshark.txt
 mkdir -p e2e/artifacts
 "$T" --version | head -1 > $OUT
 fail=0
-for s in learn normal onechange multichange attack busy; do
+for s in learn normal onechange multichange attack busylearn busy; do
   f=lab/pcaps/$s.pcap
   ws=$("$T" -r $f -Y "tls.handshake.type == 1" -T fields -E separator=' ' -e tls.handshake.extensions_server_name -e tls.handshake.ja4)
   wsttl=$("$T" -r $f -Y "tls.handshake.type == 2" -T fields -e ip.ttl)
   zh=$(./build/zerohour show $f | awk 'NR > 1 {print $1, $3}')
   zhttl=$(./build/zerohour show $f | awk 'NR > 1 {print $6}')
   issuers=$("$T" -r $f -Y "tls.handshake.type == 11" -T fields -e x509sat.uTF8String | cut -d, -f1 | sort | uniq -c | awk '{$1=$1; print}')
-  alert=$(./build/zerohour learn lab/pcaps/learn.pcap -b /tmp/zh-ws-$$.tsv >/dev/null &&
+  L=lab/pcaps/learn.pcap; case $s in busy*) L=lab/pcaps/busylearn.pcap;; esac
+  alert=$(./build/zerohour learn $L -b /tmp/zh-ws-$$.tsv >/dev/null &&
           ./build/zerohour run $f -b /tmp/zh-ws-$$.tsv -c zerohour.tuned.conf -l /tmp/zh-ws-$$.log | grep -c '^ALERT' || true)
   rm -f /tmp/zh-ws-$$.tsv /tmp/zh-ws-$$.log
   forged=$(echo "$issuers" | grep -c 'Interceptor CA' || true)
