@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-// The live page on real traffic: one VM, step 1 learns 5 real sites, then four tests on the same baseline:
+// The live page on real traffic: step 1 learns 5 real sites, then four tests. Each test stops its VM, so the next one learns the sites again in a new VM:
 // direct normal / one change / many changes, then mitmproxy attack. Then the VM's log.
 // The sites are real, so only the shape of each result is fixed. The PCAPs and screenshots are the run's artifacts.
 
@@ -18,14 +18,21 @@ async function savePcap(page: Page, link: string, file: string) {
   expect(b.readUInt32LE(0), `${file} is a pcap`).toBe(0xa1b2c3d4);
   expect(b.length).toBeGreaterThan(5_000);
 }
-async function runTest(page: Page) {
+// No trace here: the trace recorder reads response bodies and stalls the long NDJSON streams of /api/live
+// (with trace on, about 3 runs in 4 stalled; with it off, none did). The PCAPs and screenshots are the artifacts.
+test.use({ trace: 'off' });
+
+// Each run stops its VM (only 4 can run at one time) and says so; a later run first learns the sites again in a new VM.
+async function runTest(page: Page, relearn: boolean) {
   await page.getByTestId('test-run').click();
-  await expect(page.getByTestId('t-state')).toHaveText(/^Done in/, { timeout: 60_000 });
+  if (relearn) await expect(page.getByTestId('t-state')).toHaveText(/^Starting a new VM and learning the sites again/, { timeout: 10_000 });
+  await expect(page.getByTestId('t-state')).toHaveText(/^Done in .* The VM is stopped: only 4 VMs can run at one time\.$/, { timeout: 90_000 });
   await expect(page.getByTestId('t-n')).toHaveText('5of 5');
+  await expect(page.locator('#l-vm')).toHaveText('Stopped');
 }
 
 test('live page: learn, then the direct and mitmproxy scenarios; the log verifies', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   await page.goto('/live');
 
   await test.step('step 1: learn 5 real sites', async () => {
@@ -39,10 +46,11 @@ test('live page: learn, then the direct and mitmproxy scenarios; the log verifie
     await fitsOneScreen(page, 'live-learn');
   });
 
+  let runs = 0;
   const scenario = async (pathLabel: string, scen: string) => {
     await page.getByRole('button', { name: pathLabel, exact: true }).click();
     await page.locator('#scen button', { hasText: scen }).click();
-    await runTest(page);
+    await runTest(page, runs++ > 0);
   };
   const changed = (label: string) => page.locator('#test-rows .pill', { hasText: label });
 

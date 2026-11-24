@@ -1,5 +1,5 @@
 // Live capture: real TLS handshakes to hosts the user names, recorded with tcpdump in a Vercel Sandbox VM and parsed
-// by the C++ sensor (lib/capture.sh). One VM is one client network: step 1 learns, then any number of tests reuse it.
+// by the C++ sensor (lib/capture.sh). One VM is one client network: step 1 learns, then one test uses it and the VM stops.
 // The decision runs here, in the same engine as the rest of the site (tuned method), one handshake at a time.
 import { readFileSync } from 'node:fs';
 import { lookup } from 'node:dns/promises';
@@ -10,6 +10,7 @@ import { SNAPSHOT } from './snapshot.js';
 
 const P = METHODS.tuned;
 export const MIN_SITES = P.min_sites, MAX_SITES = 8, CLIENT = '10.9.0.2';
+const VM_MINUTES = 5;  // a learned VM that no test uses stops by itself after this
 const TAG = { app: 'zerohour-live' }, MAX_VMS = 4, KINDS = ['route', 'tls', 'both', 'mitm'];  // the page is public: cap the VMs that run at one time
 const SCRIPT = readFileSync(new URL('./capture.sh', import.meta.url));
 const OUT = '/vercel/sandbox/out';
@@ -47,10 +48,15 @@ export async function checkHosts(list) {
   return hosts;
 }
 
+// Every VM call gets a time limit: a call on a new VM can stall, and a stalled call must fail, so the VM is stopped.
+// The longest real step is about 10 s (curl --max-time 8, tcpdump and mitmproxy start).
+const limit = () => ({ signal: AbortSignal.timeout(20_000) });
+const vmCall = p => p.catch(e => { throw e.name === 'TimeoutError' ? new Error('The VM did not answer. Try again.') : e; });
+
 // Runs one capture.sh subcommand. The VM's output stays in the server log; the caller gets a short message.
 // The lock subcommand's own message ("A test is running") is safe and useful, so it goes through.
 async function sh(sb, args) {
-  const r = await sb.runCommand({ cmd: 'bash', args: ['/vercel/sandbox/capture.sh', ...args], sudo: true });
+  const r = await vmCall(sb.runCommand({ cmd: 'bash', args: ['/vercel/sandbox/capture.sh', ...args], sudo: true, ...limit() }));
   const out = await r.stdout();
   if (r.exitCode !== 0) {
     const err = await r.stderr();
@@ -60,12 +66,12 @@ async function sh(sb, args) {
   return out;
 }
 const readJson = async (sb, f, empty) => {
-  const b = await sb.readFileToBuffer({ path: `${OUT}/${f}` });
+  const b = await vmCall(sb.readFileToBuffer({ path: `${OUT}/${f}` }, limit()));
   return b ? JSON.parse(b.toString()) : empty;
 };
-const writeJson = (sb, f, v) => sb.writeFiles([{ path: `${OUT}/${f}`, content: Buffer.from(JSON.stringify(v)) }]);
-const pcapB64 = async (sb, f) => ((await sb.readFileToBuffer({ path: `${OUT}/${f}` })) ?? Buffer.alloc(0)).toString('base64');
-const STOPPED = 'The VM stopped. Do step 1 (Learn) again.';
+const writeJson = (sb, f, v) => vmCall(sb.writeFiles([{ path: `${OUT}/${f}`, content: Buffer.from(JSON.stringify(v)) }], limit()));
+const pcapB64 = async (sb, f) => ((await vmCall(sb.readFileToBuffer({ path: `${OUT}/${f}` }, limit()))) ?? Buffer.alloc(0)).toString('base64');
+const STOPPED = 'The VM stopped. Push Run test again: a new VM learns the sites first.';
 
 async function openVm(name) {
   if (!/^[a-z0-9][a-z0-9-]{2,80}$/i.test(String(name ?? ''))) throw new Error('No VM yet. Do step 1 (Learn) first.');
@@ -94,7 +100,7 @@ async function* visits(sb, sites, pcap, tls12 = new Set()) {
   }
 }
 
-// Step 1: a new VM, then one visit per site. The handshakes are the baseline for every later test in this VM.
+// Step 1: a new VM, then one visit per site. The handshakes are the baseline for the test in this VM.
 // The VM is stopped on every way out except success, also when the caller stops reading (generator return).
 export async function* learn(list, oldVm) {
   const hosts = await checkHosts(list);
@@ -103,11 +109,12 @@ export async function* learn(list, oldVm) {
     .filter(s => s.status === 'pending' || s.status === 'running').length;
   if (live >= MAX_VMS) throw new Error(`${live} live VMs are running now. Try again in a few minutes.`);
   const t0 = Date.now();
-  const sb = await Sandbox.create({ source: { type: 'snapshot', snapshotId: SNAPSHOT.id }, persistent: false, timeout: 15 * 60_000,
-    resources: { vcpus: 2 }, tags: TAG });
+  const sb = await Sandbox.create({ source: { type: 'snapshot', snapshotId: SNAPSHOT.id }, persistent: false, timeout: VM_MINUTES * 60_000,
+    resources: { vcpus: 2 }, tags: TAG, signal: AbortSignal.timeout(25_000) })  // a VM starts in 1 to 3 s; give up before the page does (30 s)
+    .catch(e => { throw e.name === 'TimeoutError' ? new Error('The VM did not start. Try again.') : e; });
   let ok = false;
   try {
-    await sb.writeFiles([{ path: '/vercel/sandbox/capture.sh', content: SCRIPT }]);
+    await vmCall(sb.writeFiles([{ path: '/vercel/sandbox/capture.sh', content: SCRIPT }], limit()));
     const sites = (await sh(sb, ['setup', ...hosts])).trim().split('\n').map(l => {
       const [host, ip] = l.split(' ');
       return { host, ip: ip === '-' ? null : ip };
@@ -115,7 +122,7 @@ export async function* learn(list, oldVm) {
     const bad = sites.find(s => s.ip && blocked(s.ip));  // the VM resolves again: check its answer too
     if (bad) throw new Error(`${bad.host} is a private or reserved address`);
     await writeJson(sb, 'sites.json', sites);
-    yield { type: 'vm', vm: sb.name, client: CLIENT, sites, boot_s: (Date.now() - t0) / 1000, sensor: SNAPSHOT.commit };
+    yield { type: 'vm', vm: sb.name, client: CLIENT, sites, boot_s: (Date.now() - t0) / 1000, sensor: SNAPSHOT.commit, stops_in_s: VM_MINUTES * 60 };
     const learned = [];
     let i = 0;
     for await (const v of visits(sb, sites, 'learn.pcap')) {
@@ -126,7 +133,7 @@ export async function* learn(list, oldVm) {
     ok = true;
     yield { type: 'done', learned: learned.length, total: sites.length, pcap: await pcapB64(sb, 'learn.pcap'), params: new Trw(P).params() };
   } finally {
-    if (!ok) await sb.stop().catch(() => {});
+    if (!ok) await sb.stop(limit()).catch(() => {});
   }
 }
 
@@ -134,18 +141,18 @@ export async function* learn(list, oldVm) {
 //   route: replies take 3 more routers (a normal route change, check D)   tls: the server answers with other TLS settings
 //   both: route and tls                                                    mitm: the site goes through mitmproxy
 // Route and mitmproxy act on the IPv4 address, so sites with the same address change together. Each handshake is checked against the baseline and moves the tuned TRW score.
-// Notices and verdicts go to the VM's log; the log is saved on every way out, so a verdict the page saw is never lost.
+// Notices and verdicts go to the log, which the done event sends to the page.
+// One test per VM: the VM stops when the run ends, on every way out, because only MAX_VMS can run at one time.
 export async function* test(name, changes) {
   const sb = await openVm(name);
   // A VM that stopped is resumed by the SDK as an empty new session: it has no capture.sh. Stop that one at once.
-  if (!(await sb.readFileToBuffer({ path: '/vercel/sandbox/capture.sh' }).catch(() => null))) {
-    await sb.stop().catch(() => {});
+  if (!(await sb.readFileToBuffer({ path: '/vercel/sandbox/capture.sh' }, limit()).catch(() => null))) {
+    await sb.stop(limit()).catch(() => {});
     throw new Error(STOPPED);
   }
   await sh(sb, ['lock']);
   let chain = null;
   try {
-    await sb.extendTimeout(5 * 60_000).catch(() => {});  // fails past the plan's session cap; the VM then stops on its own
     const [sites, learned, records, runs] = await Promise.all([readJson(sb, 'sites.json', []), readJson(sb, 'learn.json', null),
       readJson(sb, 'chain.json', []), readJson(sb, 'runs.json', 0)]);
     if (!learned) throw new Error('Do step 1 (Learn) first.');
@@ -187,7 +194,6 @@ export async function* test(name, changes) {
     yield { type: 'done', run, decisions, pcap: await pcapB64(sb, pcap), log: chain.records,
       timing: { n: lat.length, mean_us: lat.reduce((a, b) => a + b, 0) / Math.max(1, lat.length), p99_us: percentile(lat, 0.99), budget_us: 4000 } };
   } finally {
-    if (chain) await writeJson(sb, 'chain.json', chain.records).catch(() => {});
-    await sh(sb, ['unlock']).catch(() => {});
+    await sb.stop(limit()).catch(() => {});
   }
 }

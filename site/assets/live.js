@@ -17,13 +17,28 @@ function show(tab) {
 for (const b of $('#tabs').children) b.addEventListener('click', () => show(b.dataset.tab));
 
 // POSTs one step and calls onEvent for each JSON line as it arrives. An error before the stream starts is a JSON body.
+// Every step sends a line at least every few seconds; 30 s of silence means the connection stalled, so stop waiting.
+// The server then stops the VM, and the next Run test starts a new one.
+const IDLE_MS = 30_000, STALLED = 'The connection stopped. Push Run test again.';
 async function stream(body, onEvent) {
-  const r = await fetch('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  const ctl = new AbortController();
+  let idle;
+  const wait = () => { clearTimeout(idle); idle = setTimeout(() => ctl.abort(), IDLE_MS); };
+  wait();
+  try {
+    const r = await fetch('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    await readLines(r, onEvent, wait);
+  } catch (e) {
+    throw ctl.signal.aborted ? new Error(STALLED) : e;
+  } finally { clearTimeout(idle); }
+}
+async function readLines(r, onEvent, wait) {
   const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
   let buf = '', done = false;
   for (;;) {
     const chunk = await reader.read();
+    wait();
     if (chunk.done) break;
     buf += chunk.value;
     for (let i; (i = buf.indexOf('\n')) >= 0; buf = buf.slice(i + 1)) {
@@ -41,7 +56,11 @@ const pcapUrl = b64 => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), 
 const bar = (el, i, n) => ($(el).style.width = (n ? (i / n) * 100 : 0) + '%');
 
 // ---------------------------------------------------------------- state
-let vm = null, sites = [], params = null, ready = false, records = [], lastTest = null, running = false;
+let vm = null, vmEnds = 0, sites = [], params = null, ready = false, records = [], lastTest = null, running = false;
+const VM_STOPPED = 'The VM is stopped: only 4 VMs can run at one time.';
+// The server stops the VM at the end of each run. A dropped connection can skip that, so the page asks too; a second stop does nothing.
+const stopVm = name => name && fetch('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'stop', vm: name }), keepalive: true }).catch(() => {});
 // ready: the VM has a baseline of at least min_sites learned sites, so a test can decide.
 const busy = on => {
   running = on;
@@ -56,12 +75,10 @@ const learnRow = (s, i, st) => `<tr data-site="${esc(s.host)}" class="${st === '
   <td><span class="pill clear">Learned</span></td>` : `<td colspan="4"></td>
   <td>${st === 'now' ? '<span class="muted">Visiting…</span>' : st ? `<span class="pill alert">No handshake${st.code ? ` (HTTP ${st.code})` : ''}</span>` : '<span class="faint">Waiting</span>'}</td>`}</tr>`;
 
-$('#learn-form').addEventListener('submit', async ev => {
-  ev.preventDefault();
-  if (running) return;
-  const list = $('#sites').value.split(/[\s,]+/).filter(Boolean), t0 = performance.now(), state = [];
+// A new VM learns the sites. Returns true when the baseline has enough sites for a test to decide.
+async function learn(list) {
+  const t0 = performance.now(), state = [];
   ready = false;
-  busy(true);
   $('#to-test').disabled = true;
   $('#learn-dl').hidden = true;
   $('#l-learned').textContent = '—';
@@ -71,6 +88,7 @@ $('#learn-form').addEventListener('submit', async ev => {
     await stream({ action: 'learn', sites: list, vm }, e => {
       if (e.type === 'vm') {
         vm = e.vm;
+        vmEnds = performance.now() + (e.stops_in_s - 60) * 1000;  // keep one minute for the test
         sites = e.sites;
         records = [];
         log.reset();
@@ -101,8 +119,15 @@ $('#learn-form').addEventListener('submit', async ev => {
     });
   } catch (err) {
     $('#l-foot').textContent = `Error: ${err.message}`;
-    if (!ready) { vm = null; $('#l-vm').textContent = '—'; $('#l-vm-foot').textContent = 'No VM.'; }  // the server stops a VM whose learn failed
-  } finally { busy(false); }
+    if (!ready) { stopVm(vm); vm = null; $('#l-vm').textContent = '—'; $('#l-vm-foot').textContent = 'No VM.'; }  // the server stops a VM whose learn failed
+  }
+  return ready;
+}
+$('#learn-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  if (running) return;
+  busy(true);
+  try { await learn($('#sites').value.split(/[\s,]+/).filter(Boolean)); } finally { busy(false); }
 });
 $('#to-test').addEventListener('click', () => show('test'));
 
@@ -204,8 +229,18 @@ const scoreCell = e => e.known ? `<span class="mono">${sgn(e.score)}</span>${e.d
 
 $('#test-run').addEventListener('click', async () => {
   if (running || !ready) return;
-  const changes = plan(), t0 = performance.now();
   busy(true);
+  if (!vm || performance.now() > vmEnds) {  // the last run stopped its VM: learn the same sites again in a new VM
+    resetTest();
+    $('#t-decision').textContent = 'Learning';
+    $('#t-foot').textContent = 'Starting a new VM and learning the sites again…';
+    if (!(await learn(sites.map(s => s.host)))) {
+      $('#t-decision').textContent = '—';
+      $('#t-foot').textContent = $('#l-foot').textContent;
+      return busy(false);
+    }
+  }
+  const changes = plan(), t0 = performance.now();
   resetTest();
   $('#t-decision').textContent = 'Testing';
   $('#t-foot').textContent = 'Connecting to the VM…';
@@ -264,7 +299,7 @@ $('#test-run').addEventListener('click', async () => {
           $('#t-time').innerHTML = `${(m.p99_us / 1000).toFixed(2)}<small>ms</small>`;
           $('#t-time-foot').textContent = `Mean ${(m.mean_us / 1000).toFixed(2)} ms, ${m.n} handshakes. Check, score and log record in memory; not the packet parse.`;
         }
-        $('#t-foot').textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s.`;
+        $('#t-foot').textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s. ${VM_STOPPED}`;
         $('#test-dl').href = pcapUrl(e.pcap);
         $('#test-dl').download = `test-${e.run}.pcap`;
         $('#test-dl').hidden = false;
@@ -274,16 +309,22 @@ $('#test-run').addEventListener('click', async () => {
     });
   } catch (err) {
     $('#t-foot').textContent = `Error: ${err.message}`;
-    if (/Learn/.test(err.message)) { vm = null; ready = false; $('#to-test').disabled = true; }
-  } finally { busy(false); }
+    if (/Learn\) first/.test(err.message)) { ready = false; $('#to-test').disabled = true; }  // no baseline: step 1 again
+  } finally {
+    stopVm(vm);
+    vm = null;
+    $('#l-vm').textContent = 'Stopped';
+    $('#l-vm-foot').textContent = `${VM_STOPPED} Run test starts a new VM.`;
+    busy(false);
+  }
 });
 hoverTip($('#t-chart'));
 
 // ---------------------------------------------------------------- evidence log of this VM (assets/log.js)
 const log = evidenceLog({ records: () => records, empty: 'Run a test first.',
-  sub: k => (k ? `${k} records from the tests in this VM.` : 'Run a test to fill the log.') });
+  sub: k => (k ? `${k} records from the last test.` : 'Run a test to fill the log.') });
 
-// The VM stops by itself after 15 minutes; stop it now when the page really closes (not on a back/forward cache visit).
+// A learned VM stops after its test or by itself after 5 minutes; stop it now when the page really closes.
 addEventListener('pagehide', e => {
   if (vm && !e.persisted) navigator.sendBeacon('/api/live', new Blob([JSON.stringify({ action: 'stop', vm })], { type: 'application/json' }));
 });

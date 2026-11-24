@@ -69,7 +69,7 @@
           <li>After each visit, <b>zerohour show</b> reads the PCAP and gives JA4S, certificate key and TTL.</li>
           <li>These handshakes are the <b>baseline</b>. You can download learn.pcap.</li>
         </ol></div>
-      <div class="card"><div class="top"><div><h2>Step 2. Test</h2><p class="sub">Many times in the same VM.</p></div></div>
+      <div class="card"><div class="top"><div><h2>Step 2. Test</h2><p class="sub">One test for each VM. Then the VM stops.</p></div></div>
         <ol class="run">
           <li>The scenario sets the change for each site: none, new route, new TLS settings, or <b>mitmproxy</b>.</li>
           <li>The client visits each site again. tcpdump records test-N.pcap.</li>
@@ -109,10 +109,10 @@
         <tbody>
           <tr><td class="wrap">A snapshot with tcpdump, mitmproxy and the sensor. The sensor is built from our GitHub repo. A new VM starts from it in 1 to 3 s.</td><td class="mono">scripts/snapshot.mjs</td></tr>
           <tr><td class="wrap">VM commands: setup, start, visit, stop, route (mitmproxy), hops (route change), lock.</td><td class="mono">lib/capture.sh</td></tr>
-          <tr><td class="wrap">Learn and test in one VM, with a stream of events. The baseline and the log stay in the VM.</td><td class="mono">lib/live.js, api/live.js</td></tr>
+          <tr><td class="wrap">Learn and test in one VM, with a stream of events. The VM stops after the test. The next test learns the sites again in a new VM.</td><td class="mono">lib/live.js, api/live.js</td></tr>
           <tr><td class="wrap">Scenarios. Direct: normal, one change, many changes. Through mitmproxy: attack.</td><td class="mono">assets/live.js</td></tr>
           <tr><td class="wrap">An evidence log for the live page. The demo page and the live page use the same code.</td><td class="mono">assets/log.js</td></tr>
-          <tr><td class="wrap">Safety: private addresses are refused. Maximum 4 VMs. One test at a time in a VM. A VM stops when you close the page, or after 15 minutes (5 more for each test).</td><td class="mono">lib/live.js</td></tr>
+          <tr><td class="wrap">Safety: private addresses are refused. Maximum 4 VMs. A VM stops after its test. A VM without a test stops after 5 minutes, or when you close the page.</td><td class="mono">lib/live.js</td></tr>
         </tbody></table></div></div>
     </div>
   </section>

@@ -156,8 +156,8 @@ The `/live` page records real handshakes to sites that you type. It uses only th
 
 Each site keeps one IPv4 address for the full session.
 
-**Step 2, Test:** The client connects to the same sites again, in the same VM. You can do the test many times. Select
-a path and a scenario:
+**Step 2, Test:** The client connects to the same sites again, in the same VM. Then the VM stops. When you push Run
+test again, a new VM learns the sites again before the test. Select a path and a scenario:
 
 | Path | Scenario | Change |
 |---|---|---|
@@ -167,7 +167,7 @@ a path and a scenario:
 | Through mitmproxy | Attack | All sites go through `mitmdump --mode transparent` on the gateway of the client. |
 
 The page shows each handshake when it arrives: the checks, the step and the score. At +4.60, the page shows Alert. If
-a test ends below the threshold, the page shows Clear. The VM keeps a hash-chained evidence log of each test. The page
+a test ends below the threshold, the page shows Clear. The VM keeps a hash-chained evidence log of the test. The page
 verifies the log with BLAKE2b-256. You can download `learn.pcap` and each `test-N.pcap`.
 
 The page is public. Thus it has these limits:
@@ -175,8 +175,8 @@ The page is public. Thus it has these limits:
 - Type 3 to 8 public host names or IPv4 addresses. The function refuses private, loopback, link-local and reserved
   addresses.
 - A maximum of 4 VMs can run at the same time.
-- A VM does one test at a time.
-- A VM stops when you close the page, or after 15 minutes. Each test adds 5 minutes.
+- A VM does one test. Then it stops, and the page says why.
+- A VM without a test stops when you close the page, or after 5 minutes.
 
 After a change to the sensor, make the snapshot again. Use a commit that you pushed:
 
