@@ -1,34 +1,63 @@
-# zerohour
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="zerohour finds a TLS interceptor from the handshake alone. A client behind mitmproxy passes the +4.60 alert line after 3 sites; a normal client passes the -4.60 clear line.">
+</p>
 
-zerohour finds a TLS interceptor between a client and the internet. It does not decrypt the traffic.
+<p align="center">
+  <a href="https://zerohour-pi.vercel.app"><b>Live demo</b></a> ·
+  <a href="#how-it-decides">How it decides</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#results">Results</a> ·
+  <a href="https://www.icir.org/vern/papers/portscan-oak04.pdf">The TRW paper</a>
+</p>
 
-Demo: https://zerohour-pi.vercel.app
+zerohour finds a TLS interceptor between a client and the internet. It does not decrypt the traffic. It reads only the
+TLS handshakes, compares each site with a baseline that it learned before, and decides for each client with the
+**Threshold Random Walk** (TRW). zerohour is our sensor for Zero Hour Track 2.
 
-zerohour is a sensor for Zero Hour Track 2. It reads only the TLS handshakes in a PCAP file. For each handshake, it
-records four fingerprints: JA4, JA4S, the certificate key and the TTL. It compares each site with a baseline that it
-learned before. For each client, it makes a decision with the **Threshold Random Walk** (TRW) of Jung et al. 2004
-(`portscan-oak04.pdf`).
+A forged certificate changes more than one thing. The server fingerprint, the certificate key and the network path can
+all change at the same time. One change is normal: a server gets new software, a certificate is renewed, a route
+changes. Many changes from many sites, one after the other, are not normal. TRW measures that sequence and gives an
+alert after as few sites as possible.
 
-| Idea from the paper | In this sensor | Code |
+## How it decides
+
+<p align="center">
+  <img src="./assets/readme/how-it-decides.svg" width="100%" alt="The data path: capture, parse the TLS handshake, fingerprint (JA4, JA4S, certificate key, TTL), compare with the baseline; checks A, B and D; a capped step; one score for each client; alert at +4.60, clear at -4.60, else wait; a BLAKE2b hash-chained log.">
+</p>
+
+| Stage | What happens | Code |
+|---|---|---|
+| Capture | libpcap reads the packets. TCP reassembly keeps the first 64 KB of each direction. | `src/sensor.cpp` |
+| Fingerprint | OpenSSL calculates JA4 and JA4S (SHA-256) and the hash of the certificate key (X.509). | `src/tls.cpp` |
+| Checks | **A**: the JA4S is new. **B**: the certificate key is new. **D**: the TTL changed by more than 2. | `src/trw.cpp` |
+| Step and score | The TRW adds a step to the score of the client. Each site counts one time in a test. | `src/trw.cpp` |
+| Log | libsodium writes each notice and verdict to a hash-chained log (BLAKE2b). | `src/chainlog.cpp` |
+
+## Built on the TRW paper
+
+We took the concepts and models of zerohour from this paper:
+
+> Jaeyeon Jung, Vern Paxson, Arthur W. Berger and Hari Balakrishnan.
+> **Fast Portscan Detection Using Sequential Hypothesis Testing.** IEEE Symposium on Security and Privacy, 2004.
+> [PDF](https://www.icir.org/vern/papers/portscan-oak04.pdf)
+
+The paper finds port scanners: a remote host that makes many failed connections to new local hosts. We use the same
+model for TLS: a client that gets many changed handshakes from known sites.
+
+| Concept from the paper | In zerohour | Code |
 |---|---|---|
 | Sequential hypothesis testing | H0: no interceptor. H1: an interceptor. After each new site, the sensor accepts H0, accepts H1 or waits. | `src/trw.cpp` |
-| Random walk | Each client has a score. A mismatch adds `ln(0.8/0.1) = +2.08`. A match adds `ln(0.2/0.9) = −1.50`. The sensor counts each site one time in a test. | `src/trw.cpp` |
-| Thresholds | At `ln(β/α) = +4.60`, the sensor gives an alert. At `ln((1−β)/(1−α)) = −4.60`, the client is clear. A new test starts after each decision. E[N] comes from eq. 14. | `src/trw.cpp`, `zerohour.conf` |
+| One observation for each new destination | One handshake for each new site: it matches the baseline or it does not. Each site counts one time in a test. | `src/trw.cpp` |
+| θ0 and θ1, the success rates under H0 and H1 | The match rates without and with an interceptor: 0.9 and 0.2, or the rates from `zerohour calibrate`. | `zerohour.conf` |
+| Random walk of the likelihood ratio | Each client has a score. A mismatch adds `ln(0.8/0.1) = +2.08`. A match adds `ln(0.2/0.9) = −1.50`. | `src/trw.cpp` |
+| Thresholds η1 = β/α and η0 = (1−β)/(1−α) | With α = 0.01 and β = 0.99: an alert at `+4.60`, clear at `−4.60`. A new test starts after each decision. | `src/trw.cpp`, `zerohour.conf` |
+| Expected number of observations E[N\|H0] and E[N\|H1] | From eq. 14 of the paper. `zerohour calibrate` shows them and the number of mismatches in sequence that cause an alert. | `src/trw.h` |
 
-The data path of the sensor:
+**What we added:** the paper has one observation with two results. A handshake has three checks. The tuned method gives
+each check its own weight (its log-likelihood ratio from calibration) and limits the step of one site to `±1.84`. Refer
+to [Results](#results).
 
-1. libpcap reads the packets.
-2. TCP reassembly keeps the first 64 KB of each direction.
-3. The TLS parser reads the handshake.
-4. OpenSSL calculates JA4 and JA4S (SHA-256) and the hash of the key (X.509).
-5. Three checks compare the handshake with the baseline:
-   - **A**: the JA4S is new.
-   - **B**: the certificate key is new.
-   - **D**: the TTL changed by more than 2.
-6. The TRW adds a step to the score of the client.
-7. libsodium writes each record to a hash-chained log (BLAKE2b).
-
-## Build and run
+## Quick start
 
 1. Install the dependencies. macOS has OpenSSL 3 and libpcap.
 
@@ -42,7 +71,7 @@ The data path of the sensor:
    cmake -S . -B build && cmake --build build -j
    ```
 
-3. Make the lab PCAP files. The lab makes real TLS 1.2 handshakes with OpenSSL memory BIOs. It writes them to
+3. Make the lab PCAP files. The lab makes real TLS 1.2 handshakes with OpenSSL memory BIOs and writes them to
    `lab/pcaps/*.pcap`.
 
    ```sh
@@ -59,6 +88,39 @@ The data path of the sensor:
    ./build/zerohour serve                           # starts the dashboard at http://127.0.0.1:8765/
    ```
 
+## Results
+
+Two constraints from our mentors: the time for each handshake must be less than 4 ms, and the sensor must give fewer
+false alerts than the plan step of the paper.
+
+<p align="center">
+  <img src="./assets/readme/results.svg" width="100%" alt="Before and after tuning. p99 time per handshake on busy.pcap: 4.91 ms before, 2.90 ms after, budget 4 ms. False alerts in simulated clean tests: 7.8% before, 0.16% after. Interceptor found: 99.5% after 4.3 sites before, 98.4% after 6.5 sites after.">
+</p>
+
+| | Before (`zerohour.conf`, plan method) | After (`zerohour.tuned.conf`, tuned method) |
+|---|---|---|
+| Step for each site | If a check fails: `+2.08`. If no check fails: `−1.50`. | The sum of the log-likelihood ratios (LLR) of the checks. The rates come from calibration. The cap is `±4.60/2.5`. |
+| Evidence log | Each record waits for a full flush (`F_FULLFSYNC` / `fdatasync`). | Records use an ordered write (`F_BARRIERFSYNC`). Only alerts wait for a full flush. |
+| p99 time for each handshake, `busy.pcap` (8 clients, 128 handshakes) | 4.91 ms (more than 4 ms) | 2.90 ms |
+| p99 time for each handshake, `attack.pcap` (each site gives an alert or a notice) | 4.87 ms (more than 4 ms) | 3.50 ms |
+| False alerts, simulated (85% TLS 1.3; 25% of sites do not go through the interceptor) | 7.8% of tests | 0.16% of tests |
+| Detection, simulated | 99.5%, after 4.3 sites | 98.4%, after 6.5 sites |
+| False alerts, real `busy.pcap` (6 clients without an interceptor) | 0 | 0 |
+
+The times are the p99 of 20 runs on an Apple M2 (`site/data/bench.json`).
+
+```sh
+./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/busy.pcap -c zerohour.tuned.conf   # PASS or FAIL against 4 ms
+./build/zerohour run lab/pcaps/multichange.pcap -c zerohour.tuned.conf                   # 4 normal changes: clear
+```
+
+> [!NOTE]
+> **Trade-off:** An interceptor can copy the JA4S and the hop count of each server. Then only check B fails. The tuned
+> method gives one failed check a small weight. Thus it finds this interceptor much less frequently.
+
+The [`/tuning`](https://zerohour-pi.vercel.app/tuning) page shows how we chose the weights and the cap. The
+[`/compare`](https://zerohour-pi.vercel.app/compare) page shows the two constraints.
+
 ## Calibrate θ0 and θ1
 
 The `calibrate` command learns a baseline from one capture. Then it measures two rates:
@@ -66,9 +128,8 @@ The `calibrate` command learns a baseline from one capture. Then it measures two
 - θ0: the match rate of a clean visit at a later time.
 - θ1: the match rate through an interceptor.
 
-Each rate is a Laplace estimate: (matches + 1) / (sites + 2). The command also shows the 95% range of the raw rate.
-It shows the steps and the number of mismatches in sequence that cause an alert. It also gives the two lines for
-`zerohour.conf`.
+Each rate is a Laplace estimate: (matches + 1) / (sites + 2). The command also shows the 95% range of the raw rate,
+the steps, and the number of mismatches in sequence that cause an alert. It gives the two lines for `zerohour.conf`.
 
 To calibrate on your network:
 
@@ -93,58 +154,43 @@ To calibrate on your network:
 For an example, run `demo3/demo3.sh`. In `multichange.pcap`, 4 of 8 sites change in normal ways. The script
 calibrates into `demo3/zerohour.conf` and runs the sensor again.
 
-## Constraints: time less than 4 ms, fewer false alerts
+## Web console
 
-| | Before (`zerohour.conf`, plan method) | After (`zerohour.tuned.conf`, tuned method) |
-|---|---|---|
-| Step for each site | If a check fails: `+2.08`. If no check fails: `−1.50`. | The sum of the log-likelihood ratios (LLR) of the checks. The rates come from calibration. The cap is `±4.60/2.5`. |
-| Evidence log | Each record waits for a full flush (`F_FULLFSYNC` / `fdatasync`). | Records use an ordered write (`F_BARRIERFSYNC`). Only alerts wait for a full flush. |
-| p99 time for each handshake, `busy.pcap` (8 clients, 64 handshakes) | 4.33 ms (more than 4 ms) | 3.22 ms |
-| p99 time for each handshake, `attack.pcap` (each site gives an alert or a notice) | 4.88 ms | 4.57 ms (more than 4 ms, because each alert waits for a full flush) |
-| False alerts, simulated (85% TLS 1.3; 25% of sites do not go through the interceptor) | 7.8% of tests | 0.16% of tests |
-| Detection, simulated | 99.5%, after 4.3 sites | 98.4%, after 6.5 sites |
-| False alerts, real `busy.pcap` (6 clients without an interceptor) | 0 | 0 |
-
-```sh
-./build/zerohour bench lab/pcaps/learn.pcap lab/pcaps/busy.pcap -c zerohour.tuned.conf   # PASS or FAIL against 4 ms
-./build/zerohour run lab/pcaps/multichange.pcap -c zerohour.tuned.conf                   # 4 normal changes: clear
-```
-
-**Trade-off:** An interceptor can copy the JA4S and the hop count of each server. Then only check B fails. The tuned
-method gives one failed check a small weight. Thus it finds this interceptor much less frequently.
-
-The `/tuning` page shows how we chose the weights and the cap. The `/compare` page shows the two constraints.
-
-## Web console (Vercel)
-
-The `site/` folder is the demo on Vercel. It has static pages and Vercel functions in `site/api/`.
+The [`site/`](site/) folder is the demo on Vercel: static pages and Vercel functions in `site/api/`.
 
 - The engine `site/lib/engine.js` is a port of `src/trw.cpp`. The test `node site/test/parity.mjs` compares it with
   the C++ sensor.
-- The live replay reads `lab/pcaps/busy.pcap`. This file has real lab handshakes from 8 clients. Two clients are
-  behind an interceptor.
+- The live replay reads `lab/pcaps/busy.pcap`: real lab handshakes from 8 clients. Two clients are behind an
+  interceptor.
 - `site/lib/sim.js` simulates the false alerts. `site/lib/tune.js` does the tuning sweep.
 
-To make the fixtures again, run `sh site/scripts/fixtures.sh`.
+<details>
+<summary><b>The pages</b></summary>
 
-To deploy:
+| Page | Contents |
+|---|---|
+| [`/`](https://zerohour-pi.vercel.app) Demo | **Live replay** of `busy.pcap` (8 clients, 16 sites each, 2 clients behind an interceptor). It shows the alerts, the false alerts and the p99 detection time. **Lab scenarios** shows the score after each site for the plan method and the tuned method: Normal, One change, Many changes and Attack. **Wireshark** shows the tshark view of `learn.pcap`, `multichange.pcap` and `attack.pcap`. You can download each file. **Evidence log**: your browser calculates the BLAKE2b-256 hash of each record again. "Change one record" breaks the chain. |
+| [`/live`](https://zerohour-pi.vercel.app/live) | Live capture on real sites. Refer to the section below. |
+| [`/how-live`](https://zerohour-pi.vercel.app/how-live) | The data path of live capture, the tools and their versions, and the changes that we made for live capture. |
+| [`/tuning`](https://zerohour-pi.vercel.app/tuning) | How we chose the tuned method: measure p₀ and p₁ for each check, give each check a weight, select the cap. |
+| [`/compare`](https://zerohour-pi.vercel.app/compare) | The two constraints, before and after: the p99 time less than 4 ms, and the false alerts (simulated and real). |
+
+</details>
+
+<details>
+<summary><b>Deploy</b></summary>
 
 - Each push to `main` deploys to production.
 - For a manual deploy, run `vercel deploy --prod` from the repository root. The Root Directory of the Vercel project
   is `site/`.
+- To make the fixtures again, run `sh site/scripts/fixtures.sh`.
 
-| Page | Contents |
-|---|---|
-| `/` Demo | **Live replay** of `busy.pcap` (8 clients, 16 sites each, 2 clients behind an interceptor). It shows the alerts, the false alerts and the p99 detection time. **Lab scenarios** shows the score after each site for the plan method and the tuned method. The scenarios are Normal, One change, Many changes and Attack. **Wireshark** shows the tshark view of `learn.pcap`, `multichange.pcap` and `attack.pcap`. You can download each file. **Evidence log**: your browser calculates the BLAKE2b-256 hash of each record again. "Change one record" breaks the chain. |
-| `/live` | Live capture on real sites. Refer to the section below. |
-| `/how-live` | The data path of live capture, the tools and their versions, and the changes that we made for live capture. |
-| `/tuning` | How we chose the tuned method: measure p₀ and p₁ for each check, give each check a weight, select the cap. |
-| `/compare` | The two constraints, before and after: the p99 time less than 4 ms, and the false alerts (simulated and real). |
+</details>
 
 ### Live capture
 
-The `/live` page records real handshakes to sites that you type. It uses only the tuned method. The code is in
-`site/api/live.js`, `site/lib/live.js` and `site/lib/capture.sh`.
+The [`/live`](https://zerohour-pi.vercel.app/live) page records real handshakes to sites that you type. It uses only
+the tuned method. The code is in `site/api/live.js`, `site/lib/live.js` and `site/lib/capture.sh`.
 
 **Step 1, Learn:**
 
@@ -197,3 +243,9 @@ npx playwright show-report artifacts/report      # opens the HTML report, with a
 ```
 
 To debug with sanitizers, build with `cmake -S . -B build-asan -DZH_ASAN=ON`.
+
+## Reference
+
+Jaeyeon Jung, Vern Paxson, Arthur W. Berger and Hari Balakrishnan. *Fast Portscan Detection Using Sequential
+Hypothesis Testing.* IEEE Symposium on Security and Privacy, 2004.
+[https://www.icir.org/vern/papers/portscan-oak04.pdf](https://www.icir.org/vern/papers/portscan-oak04.pdf)

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">zerohour: finds a TLS interceptor from the handshake alone</title>
+  <desc id="desc">The zerohour pixel-zero mark and name. On the right, the score of two clients after each site, with the tuned Threshold Random Walk: a client behind an interceptor climbs +1.84 per site and passes the +4.60 alert line at site 3; a normal client falls -1.84 per site and passes the -4.60 clear line at site 3.</desc>
+
+  <rect x="0.5" y="0.5" width="1199" height="419" rx="20" fill="#ffffff" stroke="#e4e4e4"/>
+
+  <g id="title-block" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="64" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" letter-spacing="1.5" fill="#616161">TLS INTERCEPTOR DETECTION</text>
+
+    <!-- the mark: a slashed zero on a 5x7 pixel grid -->
+    <g transform="translate(64 124) scale(8)">
+      <rect width="9" height="9" rx="1.6" fill="#111111"/>
+      <path fill="#ffffff" d="M3 1h.86v.86h-.86zM4 1h.86v.86h-.86zM5 1h.86v.86h-.86zM2 2h.86v.86h-.86zM6 2h.86v.86h-.86zM2 3h.86v.86h-.86zM6 3h.86v.86h-.86zM2 4h.86v.86h-.86zM6 4h.86v.86h-.86zM2 5h.86v.86h-.86zM6 5h.86v.86h-.86zM2 6h.86v.86h-.86zM6 6h.86v.86h-.86zM3 7h.86v.86h-.86zM4 7h.86v.86h-.86zM5 7h.86v.86h-.86z"/>
+      <path fill="#6f8fff" d="M5 3h.86v.86h-.86zM4 4h.86v.86h-.86zM3 5h.86v.86h-.86z"/>
+    </g>
+    <text x="160" y="182" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="62" font-weight="700" letter-spacing="-2" fill="#111111">zerohour</text>
+
+    <text x="64" y="258" font-size="30" fill="#111111">Finds a TLS interceptor from the</text>
+    <text x="64" y="298" font-size="30" fill="#111111">handshake alone. No decryption.</text>
+
+    <text x="64" y="356" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" fill="#616161">Threshold Random Walk · C++17 · p99 &lt; 4 ms</text>
+  </g>
+
+  <line x1="652" y1="64" x2="652" y2="372" stroke="#ececec"/>
+
+  <!-- score after each site: y = 205 - 20 * score; sites at x = 720, 830, 940, 1050 -->
+  <g id="score-walk" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18">
+    <line x1="720" y1="205" x2="1100" y2="205" stroke="#e4e4e4"/>
+    <text x="708" y="211" text-anchor="end" fill="#8a8a8a">0</text>
+
+    <line x1="720" y1="113" x2="1100" y2="113" stroke="#d70015" stroke-width="1.5" stroke-dasharray="6 6"/>
+    <text x="720" y="102" fill="#d70015">+4.60 alert</text>
+    <line x1="720" y1="297" x2="1100" y2="297" stroke="#1f7a36" stroke-width="1.5" stroke-dasharray="6 6"/>
+    <text x="720" y="320" fill="#1f7a36">−4.60 clear</text>
+
+    <path d="M720 205 L830 168.2 L940 131.4 L1050 94.8" fill="none" stroke="#1a4be0" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="830" cy="168.2" r="6" fill="#1a4be0"/>
+    <circle cx="940" cy="131.4" r="6" fill="#1a4be0"/>
+    <circle cx="1050" cy="94.8" r="7" fill="#1a4be0"/>
+    <text x="1068" y="101" font-size="20" font-weight="600" fill="#d70015">Alert</text>
+
+    <path d="M720 205 L830 241.8 L940 278.6 L1050 315.4" fill="none" stroke="#111111" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="830" cy="241.8" r="6" fill="#ffffff" stroke="#111111" stroke-width="3"/>
+    <circle cx="940" cy="278.6" r="6" fill="#ffffff" stroke="#111111" stroke-width="3"/>
+    <circle cx="1050" cy="315.4" r="7" fill="#ffffff" stroke="#111111" stroke-width="3"/>
+    <text x="1068" y="322" font-size="20" font-weight="600" fill="#1f7a36">Clear</text>
+
+    <g fill="#8a8a8a" text-anchor="middle">
+      <text x="830" y="352">site 1</text>
+      <text x="940" y="352">site 2</text>
+      <text x="1050" y="352">site 3</text>
+    </g>
+
+    <circle cx="726" cy="386" r="6" fill="#1a4be0"/>
+    <text x="740" y="392" fill="#3a3a3a">behind mitmproxy</text>
+    <circle cx="924" cy="386" r="6" fill="#ffffff" stroke="#111111" stroke-width="3"/>
+    <text x="938" y="392" fill="#3a3a3a">normal client</text>
+  </g>
+</svg>

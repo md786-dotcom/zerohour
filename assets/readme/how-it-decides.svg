@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="548" viewBox="0 0 1200 548" role="img" aria-labelledby="title desc">
+  <title id="title">How zerohour decides</title>
+  <desc id="desc">Seven stages. 1 Capture: a PCAP file or live tcpdump. 2 Parse: the TLS handshake, first 64 KB. 3 Fingerprint: JA4, JA4S, certificate key, TTL. 4 Compare with the baseline of each site. Three checks: A, the JA4S is new; B, the certificate key is new; D, the TTL moved more than 2. 5 Step: the sum of the check weights, capped at plus or minus 1.84. 6 Score: one random walk for each client. Decision: alert at +4.60, clear at -4.60, else wait for the next site. 7 Log: a BLAKE2b hash chain, one record for each notice and verdict.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#9a9a9a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1199" height="547" rx="20" fill="#ffffff" stroke="#e4e4e4"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <!-- row 1: from packets to a comparison -->
+    <g id="row-capture">
+      <g transform="translate(64 40)">
+        <rect width="244" height="132" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">01</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Capture</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">PCAP file or</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">live tcpdump</text>
+      </g>
+      <g transform="translate(340 40)">
+        <rect width="244" height="132" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">02</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Parse</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">TLS handshake,</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">first 64 KB</text>
+      </g>
+      <g transform="translate(616 40)">
+        <rect width="244" height="132" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">03</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Fingerprint</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">JA4, JA4S,</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">cert key, TTL</text>
+      </g>
+      <g transform="translate(892 40)">
+        <rect width="244" height="132" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">04</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Compare</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">with the baseline</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">of each site</text>
+      </g>
+      <g stroke="#9a9a9a" stroke-width="1.6" marker-end="url(#arrow)">
+        <line x1="312" y1="106" x2="334" y2="106"/>
+        <line x1="588" y1="106" x2="610" y2="106"/>
+        <line x1="864" y1="106" x2="886" y2="106"/>
+      </g>
+    </g>
+
+    <path d="M1014 176 V196 H600 V214" fill="none" stroke="#9a9a9a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+    <!-- row 2: the three checks -->
+    <g id="checks">
+      <g transform="translate(64 220)">
+        <rect width="341" height="76" rx="12" fill="#f6f6f6"/>
+        <rect x="20" y="20" width="36" height="36" rx="6" fill="#d70015"/>
+        <text x="38" y="45" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#ffffff">A</text>
+        <text x="74" y="46" font-size="22" fill="#111111">JA4S is new</text>
+      </g>
+      <g transform="translate(429 220)">
+        <rect width="342" height="76" rx="12" fill="#f6f6f6"/>
+        <rect x="20" y="20" width="36" height="36" rx="6" fill="#d70015"/>
+        <text x="38" y="45" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#ffffff">B</text>
+        <text x="74" y="46" font-size="22" fill="#111111">Certificate key is new</text>
+      </g>
+      <g transform="translate(795 220)">
+        <rect width="341" height="76" rx="12" fill="#f6f6f6"/>
+        <rect x="20" y="20" width="36" height="36" rx="6" fill="#d70015"/>
+        <text x="38" y="45" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#ffffff">D</text>
+        <text x="74" y="46" font-size="22" fill="#111111">TTL moved more than 2</text>
+      </g>
+    </g>
+
+    <path d="M600 300 V320 H186 V338" fill="none" stroke="#9a9a9a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+    <!-- row 3: from the checks to a verdict -->
+    <g id="row-decide">
+      <g transform="translate(64 344)">
+        <rect width="244" height="160" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">05</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Step</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">sum of the check</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">weights, capped</text>
+        <text x="22" y="146" font-size="20" fill="#3a3a3a">at ±1.84</text>
+      </g>
+      <g transform="translate(340 344)">
+        <rect width="244" height="160" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">06</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Score</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">one random walk</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">for each client</text>
+      </g>
+      <g transform="translate(616 344)">
+        <rect width="244" height="48" rx="10" fill="#fff1f0"/>
+        <text x="22" y="31" font-size="20" font-weight="600" fill="#d70015">Alert at +4.60</text>
+        <rect y="56" width="244" height="48" rx="10" fill="#edf8f0"/>
+        <text x="22" y="87" font-size="20" font-weight="600" fill="#1f7a36">Clear at −4.60</text>
+        <rect y="112" width="244" height="48" rx="10" fill="#f4f4f4"/>
+        <text x="22" y="143" font-size="20" fill="#3a3a3a">Else wait for a site</text>
+      </g>
+      <g transform="translate(892 344)">
+        <rect width="244" height="160" rx="12" fill="#ffffff" stroke="#e4e4e4"/>
+        <text x="22" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a8a">07</text>
+        <text x="22" y="70" font-size="24" font-weight="600" fill="#111111">Log</text>
+        <text x="22" y="98" font-size="20" fill="#3a3a3a">BLAKE2b hash</text>
+        <text x="22" y="122" font-size="20" fill="#3a3a3a">chain, a record</text>
+        <text x="22" y="146" font-size="20" fill="#3a3a3a">for each verdict</text>
+      </g>
+      <g stroke="#9a9a9a" stroke-width="1.6" marker-end="url(#arrow)">
+        <line x1="312" y1="424" x2="334" y2="424"/>
+        <line x1="588" y1="424" x2="610" y2="424"/>
+        <line x1="864" y1="424" x2="886" y2="424"/>
+      </g>
+    </g>
+  </g>
+</svg>
